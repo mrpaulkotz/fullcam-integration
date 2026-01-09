@@ -1,0 +1,63 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+}
+
+#app {
+  position: relative;
+}
+
+#map {
+  width: 900px;
+  height: 600px;
+}
+
+#coordinates {
+  background: white;
+  padding: 10px;
+  border-radius: 5px;
+  font-family: monospace;
+  z-index: 1;
+  margin-top: 10px;
+}
+
+#style-toggle {
+  background: white;
+  padding: 10px;
+  border-radius: 5px;
+  z-index: 1;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  border: 2px solid #ddd;
+  margin: 10px 0;
+}
+
+#style-toggle:hover {
+  background: #f0f0f0;
+}
+
+label {
+  margin-right: 5px;
+}
+
+select {
+  padding: 5px;
+  border-radius: 3px;
+  border: 1px solid #ddd;
+}
+
+/* Custom marker styles */
+.custom-marker {
+  width: 40px;
+  height: 40px;
+  background-image: url('/marker.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+}
+
+.mapboxgl-marker {
+  cursor: pointer;
+}

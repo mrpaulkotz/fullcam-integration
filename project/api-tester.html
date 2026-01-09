@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Change API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .api-url {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+            word-break: break-all;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            min-height: 300px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+            padding: 8px 16px;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .response-section {
+            margin-top: 30px;
+        }
+
+        .response-box {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .response-box.success {
+            border-color: #4caf50;
+            background: #f1f8f4;
+        }
+
+        .response-box.error {
+            border-color: #f44336;
+            background: #fef3f2;
+            color: #d32f2f;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .help-text {
+            color: #666;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .status-badge.success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status-badge.error {
+            background: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌍 FullCAM Plot Simulator</h1>
+        <div class="api-url">
+            POST to: https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation
+        </div>
+
+        <div class="form-group" style="background: #d4edda; padding: 15px; border-radius: 6px; border: 1px solid #28a745; margin-bottom: 20px;">
+            <strong>✅ CORS Solution: Use Proxy Server</strong>
+            <p style="margin: 8px 0 0 0; font-size: 13px; color: #155724;">
+                <strong>To bypass CORS:</strong><br>
+                1. Run proxy server: <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">node proxy-server.js</code><br>
+                2. Enable "Use Proxy Server" checkbox below<br>
+                3. The proxy runs on localhost:3001 and forwards requests to the API
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label for="subscriptionKey">API Subscription Key</label>
+            <input 
+                type="text" 
+                id="subscriptionKey" 
+                placeholder="Enter your Ocp-Apim-Subscription-Key"
+                autocomplete="off"
+            >
+            <div class="help-text">Required: Your API subscription key</div>
+        </div>
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="useProxy" style="width: auto; margin-right: 8px;">
+                Use Proxy Server (http://localhost:3001) - Solves CORS issue!
+            </label>
+            <div class="help-text">Enable this to route requests through the local proxy server</div>
+        </div>
+
+        <div class="form-group">
+            <label for="ploFile">FullCAM Plot File (.plo)</label>
+            <input 
+                type="file" 
+                id="ploFile" 
+                accept=".plo,.xml"
+                style="padding: 8px;"
+            >
+            <div class="help-text">Select a .plo file to upload</div>
+        </div>
+
+        <div class="form-group">
+            <label for="formFieldName">Form Field Name</label>
+            <input 
+                type="text" 
+                id="formFieldName" 
+                value="file"
+                placeholder="file"
+                autocomplete="off"
+            >
+            <div class="help-text">The form field name for the file upload (check Postman's Body tab to see what field name it uses)</div>
+        </div>
+
+
+
+        <div class="button-group">
+            <button class="btn-primary" id="sendBtn" onclick="sendRequest()">
+                📤 Send POST Request
+            </button>
+        </div>
+
+        <div class="button-group">
+            <button class="btn-secondary" onclick="clearAll()">Clear All</button>
+            <button class="btn-secondary" onclick="clearResponse()">Clear Response</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Sending request...</div>
+        </div>
+
+        <div class="response-section" id="responseSection" style="display: none;">
+            <label>Response</label>
+            <div id="statusBadge"></div>
+            <div class="response-box" id="responseBox"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved subscription key
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem('apiSubscriptionKey');
+            if (savedKey) {
+                document.getElementById('subscriptionKey').value = savedKey;
+            }
+        });
+
+        // Save subscription key on change
+        document.getElementById('subscriptionKey').addEventListener('change', (e) => {
+            localStorage.setItem('apiSubscriptionKey', e.target.value);
+        });
+
+        // Handle file upload
+        document.getElementById('ploFile').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('File selected:', file.name, file.size, 'bytes');
+            }
+        });
+
+        async function sendRequest() {
+            const subscriptionKey = document.getElementById('subscriptionKey').value.trim();
+            const fileInput = document.getElementById('ploFile');
+
+            // Validation
+            if (!subscriptionKey) {
+                alert('Please enter your API subscription key');
+                return;
+            }
+
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select a .plo file');
+                return;
+            }
+
+            // Build URL - use proxy if enabled
+            const useProxy = document.getElementById('useProxy').checked;
+            const url = useProxy 
+                ? 'http://localhost:3001/api/fullcam'
+                : 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation';
+
+            // Show loading
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('responseSection').style.display = 'none';
+
+            try {
+                // Get form field name
+                const formFieldName = document.getElementById('formFieldName').value.trim() || 'file';
+                
+                // Read the file content explicitly
+                const file = fileInput.files[0];
+                const fileContent = await file.arrayBuffer();
+                
+                console.log('File read:', file.name, 'size:', file.size, 'arrayBuffer length:', fileContent.byteLength);
+                
+                // Create a new Blob from the array buffer
+                const fileBlob = new Blob([fileContent], { type: file.type || 'application/octet-stream' });
+                
+                // Create FormData to send as multipart/form-data
+                const formData = new FormData();
+                formData.append(formFieldName, fileBlob, file.name);
+                
+                console.log('Form field name:', formFieldName);
+                console.log('Blob created with size:', fileBlob.size);
+                
+                const fetchOptions = {
+                    method: 'POST',
+                    headers: {
+                        'Ocp-Apim-Subscription-Key': subscriptionKey,
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache',
+                        // Don't set Content-Type - let browser set it with boundary
+                    },
+                    body: formData
+                };
+
+                console.log('=== REQUEST DETAILS ===');
+                console.log('URL:', url);
+                console.log('Method: POST');
+                console.log('Headers:', fetchOptions.headers);
+                console.log('FormData field name:', formFieldName);
+                console.log('Original file name:', file.name);
+                console.log('Original file size:', file.size);
+                console.log('ArrayBuffer size:', fileContent.byteLength);
+                console.log('Blob size:', fileBlob.size);
+                console.log('Blob type:', fileBlob.type);
+                
+                // Verify blob has content before sending
+                if (fileBlob.size === 0) {
+                    alert('ERROR: File blob is empty! Cannot send request.');
+                    throw new Error('File blob has zero size');
+                }
+                
+                console.log('FormData entries:');
+                for (let pair of formData.entries()) {
+                    console.log(`  Field "${pair[0]}":`, pair[1]);
+                    if (pair[1] instanceof Blob) {
+                        console.log(`    - Size: ${pair[1].size} bytes`);
+                        console.log(`    - Type: ${pair[1].type}`);
+                    }
+                }
+
+                const response = await fetch(url, fetchOptions);
+
+                {
+                    // Log response details
+                    console.log('=== RESPONSE DETAILS ===');
+                    console.log('Response status:', response.status);
+                    console.log('Response statusText:', response.statusText);
+                    console.log('Response ok:', response.ok);
+                    console.log('Response type:', response.type);
+                    console.log('Response url:', response.url);
+                    console.log('Response headers:');
+                    const headers = {};
+                    response.headers.forEach((value, key) => {
+                        console.log(`  ${key}: ${value}`);
+                        headers[key] = value;
+                    });
+                    console.log('All headers as object:', headers);
+                    
+                    // Check if response is a file download (Content-Disposition header)
+                    const contentDisposition = response.headers.get('content-disposition');
+                    const contentType = response.headers.get('content-type');
+                    const contentLength = response.headers.get('content-length');
+                    
+                    console.log('Content-Disposition:', contentDisposition);
+                    console.log('Content-Type:', contentType);
+                    console.log('Content-Length:', contentLength);
+                    
+                    if (contentDisposition && contentDisposition.includes('attachment')) {
+                        // Extract filename from Content-Disposition header
+                        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                        const filename = filenameMatch && filenameMatch[1] ? filenameMatch[1].replace(/['"]/g, '') : 'fullcam-results.csv';
+                        
+                        // Get the blob and read its text content
+                        const blob = await response.blob();
+                        console.log('Received file blob:', blob.size, 'bytes, type:', blob.type);
+                        
+                        const text = await blob.text();
+                        console.log('Blob text length:', text.length);
+                        console.log('First 500 chars:', text.substring(0, 500));
+                        
+                        const lines = text.split('\n');
+                        const rowCount = lines.length - 1; // -1 for header
+                        const preview = lines.slice(0, 50).join('\n'); // Show first 50 rows
+                        
+                        // Create download link using the text content
+                        const downloadBlob = new Blob([text], { type: contentType || 'text/csv' });
+                        const downloadUrl = window.URL.createObjectURL(downloadBlob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => {
+                            window.URL.revokeObjectURL(downloadUrl);
+                            document.body.removeChild(a);
+                        }, 100);
+                        
+                        displayResponse(true, response.status, response.statusText, {
+                            message: '✓ Success! FullCAM Simulation Complete',
+                            filename: filename,
+                            fileSize: `${blob.size} bytes (${rowCount} data rows)`,
+                            contentType: contentType,
+                            downloadNote: '📥 File automatically downloaded to your Downloads folder',
+                            note: `CSV Preview (showing first 50 of ${rowCount} rows):`,
+                            preview: preview
+                        });
+                    } else if (contentLength === '0') {
+                        // Empty response
+                        displayResponse(false, response.status, response.statusText, {
+                            message: '⚠️ Empty Response',
+                            status: response.status,
+                            note: 'The API processed the request but returned no content.',
+                            info: 'This might indicate an API issue or that results are processed asynchronously.'
+                        });
+                    } else {
+                        // Handle as text/JSON response or other empty responses
+                        const responseText = await response.text();
+                        let responseData;
+                        
+                        console.log('Response text length:', responseText.length);
+                        console.log('Response text:', responseText);
+                        
+                        if (!responseText || responseText.trim() === '') {
+                            responseData = {
+                                message: '⚠️ Empty Response',
+                                status: response.status,
+                                statusText: response.statusText,
+                                contentLength: contentLength,
+                                contentType: contentType,
+                                note: 'API returned 200 OK but with no content.',
+                                action: 'Check console logs and Postman comparison for differences.'
+                            };
+                        } else {
+                            try {
+                                responseData = JSON.parse(responseText);
+                            } catch (e) {
+                                responseData = responseText;
+                            }
+                        }
+
+                        displayResponse(response.ok, response.status, response.statusText, responseData);
+                    }
+                }
+
+            } catch (error) {
+                displayResponse(false, 0, 'Network Error', {
+                    error: error.message,
+                    errorType: error.name,
+                    details: 'Failed to connect to the API.',
+                    possibleCauses: [
+                        'CORS blocking (API doesn\'t allow browser requests)',
+                        'Network connectivity issue',
+                        'Invalid API endpoint',
+                        'API server is down'
+                    ],
+                    solutions: [
+                        '1. Enable "Use Proxy Server" checkbox and run: node proxy-server.js',
+                        '2. Use a CORS browser extension',
+                        '3. Test with Postman, curl, or other API tools',
+                        '4. Contact API provider about CORS configuration'
+                    ]
+                });
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('sendBtn').disabled = false;
+            }
+        }
+
+        function displayResponse(success, status, statusText, data) {
+            const responseSection = document.getElementById('responseSection');
+            const responseBox = document.getElementById('responseBox');
+            const statusBadge = document.getElementById('statusBadge');
+
+            responseSection.style.display = 'block';
+            
+            // Determine if truly successful (200-299 status codes)
+            const isSuccess = status >= 200 && status < 300;
+            
+            // Status badge
+            statusBadge.className = `status-badge ${isSuccess ? 'success' : 'error'}`;
+            statusBadge.textContent = `${status} ${statusText}`;
+
+            // Response box
+            responseBox.className = `response-box ${isSuccess ? 'success' : 'error'}`;
+            
+            if (typeof data === 'object') {
+                responseBox.textContent = JSON.stringify(data, null, 2);
+            } else {
+                responseBox.textContent = data;
+            }
+
+            // Scroll to response
+            responseSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function clearAll() {
+            document.getElementById('ploFile').value = '';
+            clearResponse();
+        }
+
+        function clearResponse() {
+            document.getElementById('responseSection').style.display = 'none';
+            document.getElementById('responseBox').textContent = '';
+        }
+
+
+    </script>
+</body>
+</html>

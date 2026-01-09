@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mapbox GL JS map</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.17.0-beta.1/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.17.0-beta.1/mapbox-gl.js"></script>
+<script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js'></script>
+<link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css' type='text/css' />
+
+<style>
+body { margin: 0; padding: 0; }
+#map { width: 900px; height:600px }
+#coordinates {
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: monospace;
+    z-index: 1;
+}
+#style-toggle {
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 1;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    border: 2px solid #ddd;
+}
+#style-toggle:hover {
+    background: #f0f0f0;
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<button id="style-toggle">Switch to Satellite</button>
+<div>
+    <label for="year-select">Year: </label>
+    <select id="year-select">
+        <option value="2020">2020</option>
+        <option value="2021">2021</option>
+        <option value="2022">2022</option>
+        <option value="2023">2023</option>
+        <option value="2024">2024</option>
+    </select>
+</div>
+<div id="coordinates">Click on the map to get coordinates</div>
+<script>
+    mapboxgl.accessToken = 'pk.eyJ1IjoicGtvdHp6bmVhZ2NyYyIsImEiOiJjbWlxdDM4bGIwZTB3M2ZweTFveWIxZ3NwIn0.EGn8FxX3RLRQMOM5cN2QTA';
+    const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [133.75953414518108, -25.806755647793132],
+        zoom: 3
+    });
+
+    
+
+    // Toggle between map styles
+    let isSatellite = false;
+    document.getElementById('style-toggle').addEventListener('click', function() {
+        if (isSatellite) {
+            map.setStyle('mapbox://styles/mapbox/streets-v12');
+            this.textContent = 'Switch to Satellite';
+        } else {
+            map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+            this.textContent = 'Switch to Street';
+        }
+        isSatellite = !isSatellite;
+    });
+
+    // Add drawing controls
+    const draw = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: {
+            point: true,
+            polygon: true,
+            trash: true
+        },
+        defaultMode: 'simple_select'
+    });
+    
+    // Re-add draw control after style changes
+    map.on('style.load', function() {
+        if (!map.hasControl(draw)) {
+            map.addControl(draw);
+        }
+        
+        map.addSource('weather-stations-max-temp', {
+            type: 'vector',
+            url: 'mapbox://pkotzzneagcrc.bu76470e'
+        });
+        map.addLayer({
+            'id': 'weather-stations-max-temp-data',
+            'type': 'circle',
+            'source': 'weather-stations-max-temp',
+            'source-layer': 'weather_stations_max_temp-6sezsw',
+            'paint': {
+                'circle-radius': 4,
+                'circle-color': '#ffff00',
+                'circle-opacity': 1
+            }
+        });
+
+        map.addSource('weather-stations-rainfall', {
+            type: 'vector',
+            url: 'mapbox://pkotzzneagcrc.7pof2u7h'
+        });
+        map.addLayer({
+            'id': 'weather-stations-rainfall-data',
+            'type': 'circle',
+            'source': 'weather-stations-rainfall',
+            'source-layer': 'weather_stations_rainfall-0gek19',
+            'paint': {
+                'circle-radius': 4,
+                'circle-color': '#ff00ff',
+                'circle-opacity': 0.3
+            }
+        });
+    });
+    
+    map.addControl(draw);
+
+    let currentMarker = null;
+    
+    // Max temperature data
+    const maxTempData = {
+        "average_annual_max_temperatures": [
+            {
+                "site": 9965,
+                "years": {
+                    "2020": 23.4,
+                    "2021": 23.0,
+                    "2022": 23.4,
+                    "2023": 23.8,
+                    "2024": 24.5
+                }
+            }
+        ]
+    };
+
+    // Annual rainfall data
+    const annualRainfallData = {
+        "average_annual_rainfall": [
+            {
+                "site": 9965,
+                "years": {
+                    "2020": 621.8,
+                    "2021": 963.8,
+                    "2022": 772.2,
+                    "2023": 716.4,
+                    "2024": 932.2
+                }
+            }
+        ]
+    };
+
+    // Function to get max temperature value from JSON data for nearest site and selected year
+    function getMaxTempValue(siteId, year) {
+        if (!maxTempData || !maxTempData.average_annual_max_temperatures) {
+            return null;
+        }
+        
+        const siteData = maxTempData.average_annual_max_temperatures.find(
+            site => site.site === parseInt(siteId)
+        );
+        
+        if (siteData && siteData.years) {
+            return siteData.years[year] || null;
+        }
+        
+        return null;
+    }
+
+    // Function to get annual rainfall value from JSON data for nearest site and selected year
+    function getRainfallValue(siteId, year) {
+        if (!annualRainfallData || !annualRainfallData.average_annual_rainfall) {
+            return null;
+        }
+        
+        const siteData = annualRainfallData.average_annual_rainfall.find(
+            site => site.site === parseInt(siteId)
+        );
+        
+        if (siteData && siteData.years) {
+            return siteData.years[year] || null;
+        }
+        
+        return null;
+    }
+
+    // Listen for polygon creation/update/delete
+    map.on('draw.create', updateArea);
+    map.on('draw.delete', function(e) {
+        const data = draw.getAll();
+        if (data.features.length === 0) {
+            document.getElementById('coordinates').innerHTML = 'Click on the map to get coordinates';
+        } else {
+            updateArea(e);
+        }
+    });
+    map.on('draw.update', updateArea);
+    map.on('draw.selectionchange', updateArea);
+
+    // Listen for year selection changes
+    document.getElementById('year-select').addEventListener('change', function() {
+        const data = draw.getAll();
+        if (data.features.length > 0) {
+            // Trigger updateArea with the current selection
+            const selectedFeatures = draw.getSelected();
+            if (selectedFeatures.features.length > 0) {
+                updateArea({ features: selectedFeatures.features });
+            }
+        }
+    });
+
+    // Function to calculate area of a polygon in square meters using the Shoelace formula
+    function calculatePolygonArea(coordinates) {
+        const points = coordinates[0]; // Get the outer ring
+        let area = 0;
+        
+        for (let i = 0; i < points.length - 1; i++) {
+            const [lng1, lat1] = points[i];
+            const [lng2, lat2] = points[i + 1];
+            
+            // Convert to radians
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const lngDiff = (lng2 - lng1) * Math.PI / 180;
+            
+            // Calculate area using spherical excess
+            area += lngDiff * (2 + Math.sin(lat1Rad) + Math.sin(lat2Rad));
+        }
+        
+        // Earth's radius in meters
+        const earthRadius = 6371000;
+        area = Math.abs(area * earthRadius * earthRadius / 2);
+        
+        return area;
+    }
+
+    // Function to calculate centroid of a polygon
+    function calculateCentroid(coordinates) {
+        const points = coordinates[0]; // Get the outer ring
+        let sumLat = 0;
+        let sumLng = 0;
+        const numPoints = points.length - 1; // Exclude the closing point
+        
+        for (let i = 0; i < numPoints; i++) {
+            sumLng += points[i][0];
+            sumLat += points[i][1];
+        }
+        
+        return {
+            lng: sumLng / numPoints,
+            lat: sumLat / numPoints
+        };
+    }
+
+    // Function to get Australian state using Mapbox Geocoding API
+    async function getAustralianState(lng, lat) {
+        try {
+            const response = await fetch(
+                `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${lng}&latitude=${lat}&access_token=${mapboxgl.accessToken}`
+            );
+            const data = await response.json();
+            
+            if (data.features && data.features.length > 0) {
+                const feature = data.features[0];
+                // Look for region (state/territory) in the context
+                if (feature.properties && feature.properties.context) {
+                    const region = feature.properties.context.region;
+                    if (region && region.name) {
+                        return region.name;
+                    }
+                }
+            }
+            return 'Unknown';
+        } catch (error) {
+            console.error('Error fetching geocoding data:', error);
+            return 'Error';
+        }
+    }
+
+    // Function to calculate distance between two points in kilometers
+    function calculateDistance(lng1, lat1, lng2, lat2) {
+        const R = 6371; // Earth's radius in kilometers
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    // Function to find nearest rainfall monitoring site
+    function getNearestRainfallSite(lng, lat) {
+        // Query all features in the rainfall monitoring sites layer
+        const features = map.querySourceFeatures('weather-stations-rainfall', {
+            sourceLayer: 'weather_stations_rainfall-0gek19'
+        });
+        
+        if (features.length === 0) {
+            console.log('No rainfall monitoring sites found');
+            return null;
+        }
+        
+        let nearestRainfallSite = null;
+        let minDistance = Infinity;
+        
+        features.forEach(feature => {
+            if (feature.geometry.type === 'Point') {
+                const [siteLng, siteLat] = feature.geometry.coordinates;
+                const distance = calculateDistance(lng, lat, siteLng, siteLat);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestRainfallSite = {
+                        properties: feature.properties,
+                        coordinates: feature.geometry.coordinates,
+                        distance: distance.toFixed(2)
+                    };
+                }
+            }
+        });
+        
+        return nearestRainfallSite;
+    }
+
+    // Function to find nearest max temp monitoring site
+    function getNearestMaxTempSite(lng, lat) {
+        // Query all features in the max temp monitoring sites layer
+        const features = map.querySourceFeatures('weather-stations-max-temp', {
+            sourceLayer: 'weather_stations_max_temp-6sezsw'
+        });
+        
+        if (features.length === 0) {
+            console.log('No max temp monitoring sites found');
+            return null;
+        }
+        
+        let nearestMaxTempSite = null;
+        let minDistance = Infinity;
+        
+        features.forEach(feature => {
+            if (feature.geometry.type === 'Point') {
+                const [siteLng, siteLat] = feature.geometry.coordinates;
+                const distance = calculateDistance(lng, lat, siteLng, siteLat);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestMaxTempSite = {
+                        properties: feature.properties,
+                        coordinates: feature.geometry.coordinates,
+                        distance: distance.toFixed(2)
+                    };
+                }
+            }
+        });
+        
+        return nearestMaxTempSite;
+    }
+
+    async function updateArea(e) {
+        const data = draw.getAll();
+        const selectedFeatures = e.features || [];
+        const selectedYear = document.getElementById('year-select').value;
+        
+        if (selectedFeatures.length > 0) {
+            const feature = selectedFeatures[0];
+            
+            // Check if it's a point (marker)
+            if (feature.geometry.type === 'Point') {
+                const [lng, lat] = feature.geometry.coordinates;
+                const state = await getAustralianState(lng, lat);
+                const nearestRainfallSite = getNearestRainfallSite(lng, lat);
+                const nearestMaxTempSite = getNearestMaxTempSite(lng, lat);
+                
+                console.log('Marker coordinates:', { latitude: lat, longitude: lng, state: state, nearestRainfallSite: nearestRainfallSite });
+                
+                let RainfallSiteInfo = '';
+                if (nearestRainfallSite) {
+                    const props = nearestRainfallSite.properties;
+                    const siteId = props.site || props.id;
+                    const rainfall = getRainfallValue(siteId, selectedYear);
+                    const rainfallInfo = rainfall !== null ? `<br>Total annual rainfall (${selectedYear}): ${rainfall} mm` : `<br>No data for ${selectedYear}`;
+                    RainfallSiteInfo = `<br><br>Nearest Rainfall Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestRainfallSite.distance} km${rainfallInfo}`;
+                }
+
+                let MaxTempSiteInfo = '';
+                if (nearestMaxTempSite) {
+                    const props = nearestMaxTempSite.properties;
+                    const siteId = props.site || props.id;
+                    const maxTemp = getMaxTempValue(siteId, selectedYear);
+                    const tempInfo = maxTemp !== null ? `<br>Average maximum temperature (${selectedYear}): ${maxTemp}°C` : `<br>No data for ${selectedYear}`;
+                    MaxTempSiteInfo = `<br><br>Nearest Max Temp Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${siteId || 'N/A'}<br>Distance: ${nearestMaxTempSite.distance} km${tempInfo}`;
+                }
+                
+                document.getElementById('coordinates').innerHTML = 
+                    `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}<br>State: ${state}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+            } 
+            // Check if it's a polygon
+            else if (feature.geometry.type === 'Polygon') {
+                const areaInSquareMeters = calculatePolygonArea(feature.geometry.coordinates);
+                const areaInHectares = areaInSquareMeters / 10000;
+                const centroid = calculateCentroid(feature.geometry.coordinates);
+                const state = await getAustralianState(centroid.lng, centroid.lat);
+                const nearestRainfallSite = getNearestRainfallSite(centroid.lng, centroid.lat);
+                const nearestMaxTempSite = getNearestMaxTempSite(centroid.lng, centroid.lat);
+                
+                let RainfallSiteInfo = '';
+                if (nearestRainfallSite) {
+                    const props = nearestRainfallSite.properties;
+                    const siteId = props.site || props.id;
+                    const rainfall = getRainfallValue(siteId, selectedYear);
+                    const rainfallInfo = rainfall !== null ? `<br>Total annual rainfall (${selectedYear}): ${rainfall} mm` : `<br>No data for ${selectedYear}`;
+                    RainfallSiteInfo = `<br><br>Nearest Rainfall Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestRainfallSite.distance} km${rainfallInfo}`;
+                }
+                
+                let MaxTempSiteInfo = '';
+                if (nearestMaxTempSite) {
+                    const props = nearestMaxTempSite.properties;
+                    const siteId = props.site || props.id;
+                    const maxTemp = getMaxTempValue(siteId, selectedYear);
+                    const tempInfo = maxTemp !== null ? `<br>Average maximum temperature (${selectedYear}): ${maxTemp}°C` : `<br>No data for ${selectedYear}`;
+                    MaxTempSiteInfo = `<br><br>Nearest Max Temp Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${siteId || 'N/A'}<br>Distance: ${nearestMaxTempSite.distance} km${tempInfo}`;
+                }
+                
+                document.getElementById('coordinates').innerHTML = 
+                    `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}<br>State: ${state}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+            }
+        } else if (data.features.length === 0) {
+            document.getElementById('coordinates').innerHTML = 
+                'Draw on the map';
+        } else {
+            document.getElementById('coordinates').innerHTML = 
+                `Features: ${data.features.length}<br>Select a feature to view details`;
+        }
+    }
+</script>
+
+</body>
+</html>

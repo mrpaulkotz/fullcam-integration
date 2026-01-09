@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mapbox Weather Station Map</title>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.17.0-beta.1/mapbox-gl.css" rel="stylesheet">
+    <link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css' type='text/css' />
+  </head>
+  <body>
+    <div id="app">
+      <div id="map"></div>
+      <button id="style-toggle">Switch to Satellite</button>
+      <div>
+        <label for="year-select">Year: </label>
+        <select id="year-select">
+          <option value="2020">2020</option>
+          <option value="2021">2021</option>
+          <option value="2022">2022</option>
+          <option value="2023">2023</option>
+          <option value="2024">2024</option>
+        </select>
+      </div>
+      <div id="coordinates">Add a point or polygon to the map to get location and weather information</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

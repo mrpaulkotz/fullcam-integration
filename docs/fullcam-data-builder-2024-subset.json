@@ -1,0 +1,196 @@
+
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "FullCAM Data Builder API (2024 subset)",
+    "description": "Extracted endpoints under /2024/data-builder for FullCAM Data API v1. Based on DCCEEW Swagger and department guidance.",
+    "version": "v1",
+    "contact": {
+      "name": "FullCAM",
+      "email": "fullcam@dcceew.gov.au"
+    },
+    "license": {
+      "name": "Licence agreement",
+      "url": "https://www.dcceew.gov.au/climate-change/publications/licence-agreement-for-fullcam"
+    },
+    "termsOfService": "https://www.dcceew.gov.au/climate-change/publications/full-carbon-accounting-model-fullcam"
+  },
+  "servers": [
+    {
+      "url": "https://api.climatechange.gov.au/climate/carbon-accounting/2024/data/v1",
+      "description": "FullCAM 2024 Data API base"
+    }
+  ],
+  "tags": [
+    {
+      "name": "FullCAM2024DataBuilder",
+      "description": "Endpoints for the 2024 Data Builder"
+    }
+  ],
+  "paths": {
+    "/2024/data-builder/siteinfo": {
+      "get": {
+        "tags": ["FullCAM2024DataBuilder"],
+        "summary": "Get site/location metadata for a point",
+        "description": "Returns site information (climate and related inputs) to assist building plot files for the specified latitude/longitude.",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 150, "default": "Cell", "pattern": "^[a-zA-Z0-9]+$" }
+          },
+          {
+            "name": "frCat",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 150, "default": "All", "pattern": "^[a-zA-Z0-9]+$" }
+          },
+          {
+            "name": "incGrowth",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SiteInfo" } } } },
+          "204": { "description": "No Content" },
+          "400": { "description": "Bad Request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }, "text/plain": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }, "text/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } },
+          "401": { "description": "Unauthorized (missing or invalid subscription key)" },
+          "404": { "description": "Not Found (check route segments)" },
+          "429": { "description": "Too Many Requests" },
+          "500": { "description": "Server Error" }
+        }
+      }
+    },
+    "/2024/data-builder/species": {
+      "get": {
+        "tags": ["FullCAM2024DataBuilder"],
+        "summary": "List or query species options for a location",
+        "description": "Returns species information relevant to the specified location and filters (e.g., forest category).",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "number", "format": "double" }
+          },
+          {
+            "name": "area",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 150, "default": "Cell", "pattern": "^[a-zA-Z0-9]+$" }
+          },
+          {
+            "name": "frCat",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 150, "default": "All", "pattern": "^[a-zA-Z0-9]+$" }
+          },
+          {
+            "name": "specId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "default": "" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SpeciesList" } } } },
+          "204": { "description": "No Content" },
+          "400": { "description": "Bad Request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }, "text/plain": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }, "text/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } },
+          "401": { "description": "Unauthorized (missing or invalid subscription key)" },
+          "404": { "description": "Not Found (check route segments)" },
+          "429": { "description": "Too Many Requests" },
+          "500": { "description": "Server Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" }
+        }
+      },
+      "SiteInfo": {
+        "type": "object",
+        "description": "Representative schema for site information; exact fields depend on API version.",
+        "properties": {
+          "location": {
+            "type": "object",
+            "properties": {
+              "latitude": { "type": "number" },
+              "longitude": { "type": "number" }
+            }
+          },
+          "climate": {
+            "type": "object",
+            "properties": {
+              "rainfall": { "type": "string" },
+              "temperature": { "type": "string" }
+            }
+          },
+          "fpi": {
+            "type": "object",
+            "properties": {
+              "monthly": { "type": "array", "items": { "type": "number" } },
+              "annualAverage": { "type": "number" }
+            }
+          }
+        }
+      },
+      "SpeciesList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "category": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "OcpApimSubscriptionKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Ocp-Apim-Subscription-Key",
+        "description": "Azure APIM subscription key required for requests."
+      }
+    }
+  },
+  "security": [
+    { "OcpApimSubscriptionKey": [] }
+  ]
+}

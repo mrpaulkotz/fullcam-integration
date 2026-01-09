@@ -1,0 +1,23 @@
+
+<Events>
+    <EventID>1</EventID>
+        <EventName>My cool event</EventName>
+        <EventDate>1-Jan-20</EventDate>
+        <EventType>Planting</EventType>
+        <AreaInHectares>100</AreaInHectares>
+        <SpeciesCategory>Environmental plantings</SpeciesCategory>
+        <Species>Mallee eucalypt</Species>
+        <LengthOfGrowthPauseInYears>0</LengthOfGrowthPauseInYears>
+        <WildfireEvent id="1">
+                <WildfireEventDate>12-Feb-21</WildfireEventDate>
+                <WildfireEventPercentForestBurned>40</WildfireEventPercentForestBurned>
+                <WildfireEventPercentTreesKilled>10</WildfireEventPercentTreesKilled>
+        </WildfireEvent>
+            <WildfireEvent id="2">
+                <WildfireEventDate>10-Mar-23</WildfireEventDate>
+                <WildfireEventPercentForestBurned>10</WildfireEventPercentForestBurned>
+                <WildfireEventPercentTreesKilled>5</WildfireEventPercentTreesKilled>
+        </WildfireEvent>
+        <SimulationStartDate>1-Jan-25</SimulationStartDate>
+        <SimulationEndDate>31-Dec-25</SimulationEndDate>
+</Events>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOM Data to CSV Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 20px;
+        }
+        .stats {
+            background-color: #e7f3ff;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BOM Data to CSV Converter</h1>
+        
+        <div>
+            <label for="inputData">Paste BOM Data Here:</label>
+            <textarea id="inputData" placeholder="Paste your Bureau of Meteorology data here..."></textarea>
+        </div>
+        
+        <div>
+            <button onclick="convertData()">Convert to CSV</button>
+            <button onclick="downloadCSV()" id="downloadBtn" disabled>Download CSV</button>
+            <button onclick="copyToClipboard()" id="copyBtn" disabled>Copy to Clipboard</button>
+            <button onclick="downloadGeoJSON()" id="geoJsonBtn" disabled>Download GeoJSON</button>
+        </div>
+        
+        <div class="output">
+            <div id="stats" class="stats" style="display: none;"></div>
+            <label for="outputData">CSV Output:</label>
+            <textarea id="outputData" readonly placeholder="CSV output will appear here..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        let csvOutput = '';
+        let geoJsonOutput = null;
+
+        /**
+         * Parse date string in format "MMM YYYY" to a Date object
+         * @param {string} dateStr - Date string like "Dec 2020"
+         * @returns {Date|null} - Date object or null if invalid
+         */
+        function parseDate(dateStr) {
+            if (!dateStr || dateStr.trim() === '') return null;
+            
+            const months = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+                'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+            };
+            
+            const parts = dateStr.trim().split(' ');
+            if (parts.length !== 2) return null;
+            
+            const month = months[parts[0]];
+            const year = parseInt(parts[1]);
+            
+            if (month === undefined || isNaN(year)) return null;
+            
+            return new Date(year, month);
+        }
+
+        /**
+         * Check if a date is December 2020 or later
+         * @param {string} dateStr - Date string to check
+         * @returns {boolean} - True if date is Dec 2020 or later
+         */
+        function isDecember2020OrLater(dateStr) {
+            const date = parseDate(dateStr);
+            if (!date) return false;
+            
+            const cutoffDate = new Date(2020, 11); // December 2020
+            return date >= cutoffDate;
+        }
+
+        /**
+         * Convert BOM data to CSV with specific column widths
+         * @param {string} data - The raw text data to convert
+         * @returns {string} - Comma-separated values string
+         */
+        function convertToCommaSeparated(data) {
+            const lines = data.split('\n');
+            
+            // Step 1: Delete first four lines
+            let processedLines = lines.slice(4);
+            
+            // Step 2: Delete the last six lines
+            processedLines = processedLines.slice(0, -6);
+            
+            // Filter out empty lines
+            const dataLines = processedLines.filter(line => line.trim());
+            
+            // Define CSV headers
+            const headers = ['Site', 'Name', 'Lat', 'Lon', 'Start', 'End', 'Years', '%', 'Obs', 'AWS'];
+            
+            // Parse data rows
+            const csvRows = [headers];
+            let filteredCount = 0;
+            
+            for (const line of dataLines) {
+                // Parse fixed-width format with specified column widths
+                let pos = 0;
+                
+                // Site: first 7 characters
+                const site = line.substring(pos, pos + 7).trim();
+                pos += 7;
+                
+                // Name: next 42 characters
+                const name = line.substring(pos, pos + 42).trim();
+                pos += 42;
+                
+                // Lat: next 8 characters
+                const lat = line.substring(pos, pos + 8).trim();
+                pos += 8;
+                
+                // Lon: next 10 characters
+                const lon = line.substring(pos, pos + 10).trim();
+                pos += 10;
+                
+                // Start: next 9 characters
+                const start = line.substring(pos, pos + 9).trim();
+                pos += 9;
+                
+                // End: next 9 characters
+                const end = line.substring(pos, pos + 9).trim();
+                pos += 9;
+                
+                // Years: next 7 characters
+                const years = line.substring(pos, pos + 7).trim();
+                pos += 7;
+                
+                // %: next 5 characters
+                const percent = line.substring(pos, pos + 5).trim();
+                pos += 5;
+                
+                // Obs: next 8 characters
+                const obs = line.substring(pos, pos + 8).trim();
+                pos += 8;
+                
+                // AWS: next 4 characters
+                const aws = line.substring(pos, pos + 4).trim();
+                
+                // Step 3: Filter out rows where End date is earlier than Dec 2020
+                if (!isDecember2020OrLater(end)) {
+                    filteredCount++;
+                    continue;
+                }
+                
+                // Escape fields that contain commas or quotes
+                const escapeField = (field) => {
+                    if (field.includes(',') || field.includes('"') || field.includes('\n')) {
+                        return `"${field.replace(/"/g, '""')}"`;
+                    }
+                    return field;
+                };
+                
+                csvRows.push([
+                    escapeField(site),
+                    escapeField(name),
+                    escapeField(lat),
+                    escapeField(lon),
+                    escapeField(start),
+                    escapeField(end),
+                    escapeField(years),
+                    escapeField(percent),
+                    escapeField(obs),
+                    escapeField(aws)
+                ]);
+            }
+            
+            // Store filtered count for stats
+            convertToCommaSeparated.filteredCount = filteredCount;
+            
+            // Convert to CSV string
+            return csvRows.map(row => row.join(',')).join('\n');
+        }
+
+        function convertData() {
+            const inputData = document.getElementById('inputData').value;
+            
+            if (!inputData.trim()) {
+                alert('Please paste some data first!');
+                return;
+            }
+            
+            try {
+                csvOutput = convertToCommaSeparated(inputData);
+                document.getElementById('outputData').value = csvOutput;
+                
+                // Show stats
+                const lines = csvOutput.split('\n').length - 1; // Subtract header
+                const filtered = convertToCommaSeparated.filteredCount || 0;
+                document.getElementById('stats').innerHTML = 
+                    `✓ Successfully converted ${lines} weather station records<br>` +
+                    `✓ Filtered out ${filtered} records with end dates before Dec 2020`;
+                document.getElementById('stats').style.display = 'block';
+                
+                // Enable download and copy buttons
+                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('copyBtn').disabled = false;
+                document.getElementById('geoJsonBtn').disabled = false;
+                
+                // Reset GeoJSON output when new data is converted
+                geoJsonOutput = null;
+            } catch (error) {
+                alert('Error converting data: ' + error.message);
+            }
+        }
+
+        function downloadCSV() {
+            if (!csvOutput) return;
+            
+            const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'weather_stations.csv');
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function copyToClipboard() {
+            if (!csvOutput) return;
+            
+            const outputTextarea = document.getElementById('outputData');
+            outputTextarea.select();
+            document.execCommand('copy');
+            
+            const btn = document.getElementById('copyBtn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        }
+
+        /**
+         * Convert CSV to GeoJSON
+         * @param {string} csvString - CSV string to convert
+         * @returns {Object} - GeoJSON FeatureCollection
+         */
+        function csvToGeoJSON(csvString) {
+            const lines = csvString.split('\n');
+            if (lines.length < 2) return null;
+            
+            // Parse header
+            const headers = lines[0].split(',');
+            
+            // Create GeoJSON structure
+            const geoJson = {
+                type: 'FeatureCollection',
+                features: []
+            };
+            
+            // Parse data rows
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                
+                // Parse CSV line (handling quoted fields)
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    
+                    if (char === '"') {
+                        if (inQuotes && line[j + 1] === '"') {
+                            current += '"';
+                            j++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        values.push(current);
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                values.push(current);
+                
+                // Create object from values
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header.trim()] = values[index] || '';
+                });
+                
+                // Parse coordinates
+                const lat = parseFloat(row.Lat);
+                const lon = parseFloat(row.Lon);
+                
+                // Skip if coordinates are invalid
+                if (isNaN(lat) || isNaN(lon)) continue;
+                
+                // Create GeoJSON feature
+                const feature = {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [lon, lat]
+                    },
+                    properties: {
+                        site: row.Site,
+                        name: row.Name,
+                        start: row.Start,
+                        end: row.End,
+                        years: row.Years,
+                        percent: row['%'],
+                        obs: row.Obs,
+                        aws: row.AWS
+                    }
+                };
+                
+                geoJson.features.push(feature);
+            }
+            
+            return geoJson;
+        }
+
+        function downloadGeoJSON() {
+            if (!csvOutput) return;
+            
+            // Convert CSV to GeoJSON if not already done
+            if (!geoJsonOutput) {
+                geoJsonOutput = csvToGeoJSON(csvOutput);
+            }
+            
+            if (!geoJsonOutput) {
+                alert('Error creating GeoJSON');
+                return;
+            }
+            
+            const jsonString = JSON.stringify(geoJsonOutput, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'weather_stations.geojson');
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>

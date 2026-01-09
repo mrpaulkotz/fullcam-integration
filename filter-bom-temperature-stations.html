@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Station Filter - End Date >= 2020</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .column {
+            flex: 1;
+        }
+        h2 {
+            margin-top: 0;
+        }
+        .buttons {
+            margin-bottom: 10px;
+        }
+        .stats {
+            background-color: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Weather Station Filter - End Date >= 2020</h1>
+    <div class="container">
+        <div class="column">
+            <h2>Input (Paste Weather Station Data)</h2>
+            <textarea id="input" placeholder="Paste the BOM weather station data here..."></textarea>
+            <div class="buttons">
+                <button onclick="filterData()">Filter Stations (End Date >= 2020)</button>
+            </div>
+        </div>
+        <div class="column">
+            <h2>Output (Filtered Data)</h2>
+            <div class="stats" id="stats"></div>
+            <div class="buttons">
+                <button onclick="copyToClipboard()">Copy to Clipboard</button>
+                <button onclick="downloadFile()">Download as Text File</button>
+            </div>
+            <pre id="output"></pre>
+        </div>
+    </div>
+
+    <script>
+        function filterStationsByEndDate(data) {
+            const lines = data.split('\n');
+            const filteredLines = [];
+            let originalCount = 0;
+            let filteredCount = 0;
+            
+            // Keep header lines (first 4 lines)
+            for (let i = 0; i < 4 && i < lines.length; i++) {
+                filteredLines.push(lines[i]);
+            }
+            
+            // Process data lines
+            for (let i = 4; i < lines.length; i++) {
+                const line = lines[i];
+                if (!line.trim()) continue;
+                
+                // Skip footer lines but keep them
+                if (line.includes('stations') || line.includes('Copyright') || line.includes('Please note')) {
+                    filteredLines.push(line);
+                    continue;
+                }
+                
+                originalCount++;
+                
+                // Extract end date (format: "MMM YYYY" at positions ~56-64)
+                const endDateStr = line.substring(56, 64).trim();
+                
+                if (endDateStr) {
+                    // Parse the date
+                    const parts = endDateStr.split(' ');
+                    if (parts.length === 2) {
+                        const year = parseInt(parts[1]);
+                        // Keep stations with end date >= 2020
+                        if (year >= 2020) {
+                            filteredLines.push(line);
+                            filteredCount++;
+                        }
+                    }
+                }
+            }
+            
+            return {
+                text: filteredLines.join('\n'),
+                originalCount: originalCount,
+                filteredCount: filteredCount,
+                removedCount: originalCount - filteredCount
+            };
+        }
+
+        function filterData() {
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            const stats = document.getElementById('stats');
+            
+            if (!input.trim()) {
+                output.textContent = 'Please paste weather station data in the input box.';
+                stats.innerHTML = '';
+                return;
+            }
+            
+            try {
+                const result = filterStationsByEndDate(input);
+                output.textContent = result.text;
+                
+                stats.innerHTML = `
+                    <strong>Filter Results:</strong><br>
+                    Original stations: ${result.originalCount}<br>
+                    Stations kept (end date >= 2020): ${result.filteredCount}<br>
+                    Stations removed (end date < 2020): ${result.removedCount}
+                `;
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                stats.innerHTML = '';
+            }
+        }
+
+        function copyToClipboard() {
+            const output = document.getElementById('output');
+            if (!output.textContent.trim()) {
+                alert('No data to copy. Please filter the data first.');
+                return;
+            }
+            
+            navigator.clipboard.writeText(output.textContent).then(() => {
+                alert('Copied to clipboard!');
+            }).catch(err => {
+                alert('Failed to copy: ' + err);
+            });
+        }
+
+        function downloadFile() {
+            const output = document.getElementById('output');
+            if (!output.textContent.trim()) {
+                alert('No data to download. Please filter the data first.');
+                return;
+            }
+            
+            const blob = new Blob([output.textContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'filtered_weather_stations_2020.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

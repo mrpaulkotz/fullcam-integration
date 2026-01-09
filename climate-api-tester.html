@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climate Change API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .api-url {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+            word-break: break-all;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            min-height: 300px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+            padding: 8px 16px;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .response-section {
+            margin-top: 30px;
+        }
+
+        .response-box {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .response-box.success {
+            border-color: #4caf50;
+            background: #f1f8f4;
+        }
+
+        .response-box.error {
+            border-color: #f44336;
+            background: #fef3f2;
+            color: #d32f2f;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .help-text {
+            color: #666;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .status-badge.success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status-badge.error {
+            background: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌍 Climate Change API Tester</h1>
+        <div class="api-url">
+            POST to: https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1
+        </div>
+
+        <div class="form-group">
+            <label for="subscriptionKey">API Subscription Key</label>
+            <input 
+                type="text" 
+                id="subscriptionKey" 
+                placeholder="Enter your Ocp-Apim-Subscription-Key"
+                autocomplete="off"
+            >
+            <div class="help-text">Required: Your API subscription key</div>
+        </div>
+
+        <div class="form-group">
+            <label for="endpoint">Endpoint (optional)</label>
+            <input 
+                type="text" 
+                id="endpoint" 
+                placeholder="Leave empty for base URL or enter path like 'some-endpoint'"
+                autocomplete="off"
+            >
+            <div class="help-text">Optional: Additional path after the base URL</div>
+        </div>
+
+        <div class="form-group">
+            <label for="jsonData">JSON Data to POST</label>
+            <textarea 
+                id="jsonData" 
+                placeholder='Paste your JSON data here, e.g.:
+{
+  "key": "value",
+  "data": []
+}'
+            ></textarea>
+            <div class="help-text">Paste your JSON payload here</div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn-primary" id="sendBtn" onclick="sendRequest()">
+                📤 Send POST Request
+            </button>
+        </div>
+
+        <div class="button-group">
+            <button class="btn-secondary" onclick="formatJSON()">Format JSON</button>
+            <button class="btn-secondary" onclick="clearAll()">Clear All</button>
+            <button class="btn-secondary" onclick="clearResponse()">Clear Response</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Sending request...</div>
+        </div>
+
+        <div class="response-section" id="responseSection" style="display: none;">
+            <label>Response</label>
+            <div id="statusBadge"></div>
+            <div class="response-box" id="responseBox"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved subscription key
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem('apiSubscriptionKey');
+            if (savedKey) {
+                document.getElementById('subscriptionKey').value = savedKey;
+            }
+        });
+
+        // Save subscription key on change
+        document.getElementById('subscriptionKey').addEventListener('change', (e) => {
+            localStorage.setItem('apiSubscriptionKey', e.target.value);
+        });
+
+        async function sendRequest() {
+            const subscriptionKey = document.getElementById('subscriptionKey').value.trim();
+            const endpoint = document.getElementById('endpoint').value.trim();
+            const jsonData = document.getElementById('jsonData').value.trim();
+
+            // Validation
+            if (!subscriptionKey) {
+                alert('Please enter your API subscription key');
+                return;
+            }
+
+            if (!jsonData) {
+                alert('Please enter JSON data to send');
+                return;
+            }
+
+            // Validate JSON
+            let parsedData;
+            try {
+                parsedData = JSON.parse(jsonData);
+            } catch (e) {
+                alert('Invalid JSON format. Please check your data.\n\n' + e.message);
+                return;
+            }
+
+            // Build URL
+            const baseUrl = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1';
+            const url = endpoint ? `${baseUrl}/${endpoint}` : baseUrl;
+
+            // Show loading
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('responseSection').style.display = 'none';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Ocp-Apim-Subscription-Key': subscriptionKey,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(parsedData)
+                });
+
+                const responseText = await response.text();
+                let responseData;
+                
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                displayResponse(response.ok, response.status, response.statusText, responseData);
+
+            } catch (error) {
+                displayResponse(false, 0, 'Network Error', {
+                    error: error.message,
+                    details: 'Failed to connect to the API. Check your internet connection or CORS settings.'
+                });
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('sendBtn').disabled = false;
+            }
+        }
+
+        function displayResponse(success, status, statusText, data) {
+            const responseSection = document.getElementById('responseSection');
+            const responseBox = document.getElementById('responseBox');
+            const statusBadge = document.getElementById('statusBadge');
+
+            responseSection.style.display = 'block';
+            
+            // Status badge
+            statusBadge.className = `status-badge ${success ? 'success' : 'error'}`;
+            statusBadge.textContent = `${status} ${statusText}`;
+
+            // Response box
+            responseBox.className = `response-box ${success ? 'success' : 'error'}`;
+            
+            if (typeof data === 'object') {
+                responseBox.textContent = JSON.stringify(data, null, 2);
+            } else {
+                responseBox.textContent = data;
+            }
+
+            // Scroll to response
+            responseSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function formatJSON() {
+            const textarea = document.getElementById('jsonData');
+            const jsonData = textarea.value.trim();
+
+            if (!jsonData) {
+                alert('Please enter JSON data first');
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(jsonData);
+                textarea.value = JSON.stringify(parsed, null, 2);
+            } catch (e) {
+                alert('Invalid JSON format. Cannot format.\n\n' + e.message);
+            }
+        }
+
+        function clearAll() {
+            document.getElementById('jsonData').value = '';
+            document.getElementById('endpoint').value = '';
+            clearResponse();
+        }
+
+        function clearResponse() {
+            document.getElementById('responseSection').style.display = 'none';
+            document.getElementById('responseBox').textContent = '';
+        }
+
+        // Allow Ctrl+Enter to submit
+        document.getElementById('jsonData').addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                sendRequest();
+            }
+        });
+    </script>
+</body>
+</html>

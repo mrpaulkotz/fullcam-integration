@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tileset Verification</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+        .result { margin: 10px 0; padding: 10px; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h2>Mapbox Tileset Verification</h2>
+    <div id="results"></div>
+
+    <script>
+        const accessToken = 'pk.eyJ1IjoicGtvdHp6bmVhZ2NyYyIsImEiOiJjbWlxdDM4bGIwZTB3M2ZweTFveWIxZ3NwIn0.EGn8FxX3RLRQMOM5cN2QTA';
+        const tilesets = [
+            { id: 'pkotzzneagcrc.bu76470e', name: 'Weather Stations - Max Temp' },
+            { id: 'pkotzzneagcrc.7pof2u7h', name: 'Weather Stations - Rainfall' },
+            { id: 'pkotzzneagcrc.6j1aiouc', name: 'ABS SA2' }
+        ];
+
+        const resultsDiv = document.getElementById('results');
+
+        async function verifyTileset(tileset) {
+            const url = `https://api.mapbox.com/v4/${tileset.id}.json?access_token=${accessToken}`;
+            
+            try {
+                const response = await fetch(url);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultsDiv.innerHTML += `
+                        <div class="result success">
+                            ✓ <strong>${tileset.name}</strong> (${tileset.id})<br>
+                            Status: ${response.status}<br>
+                            Name: ${data.name || 'N/A'}<br>
+                            ${data.vector_layers ? `Layers: ${data.vector_layers.map(l => l.id).join(', ')}` : ''}
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML += `
+                        <div class="result error">
+                            ✗ <strong>${tileset.name}</strong> (${tileset.id})<br>
+                            Status: ${response.status} ${response.statusText}<br>
+                            Error: Tileset not found or not accessible
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML += `
+                    <div class="result error">
+                        ✗ <strong>${tileset.name}</strong> (${tileset.id})<br>
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        resultsDiv.innerHTML = '<div class="result info">Checking tilesets...</div>';
+        
+        Promise.all(tilesets.map(verifyTileset)).then(() => {
+            console.log('Verification complete');
+        });
+    </script>
+</body>
+</html>
