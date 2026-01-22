@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FullCAM Plot Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #666;
+            margin-top: 25px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-secondary {
+            background-color: #666;
+            color: white;
+        }
+        .btn-download {
+            background-color: #2196F3;
+            color: white;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 20px;
+            display: none;
+        }
+        .output.visible {
+            display: block;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .helper-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 3px;
+        }
+        .full-width {
+            grid-column: span 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FullCAM Plot Generator</h1>
+        
+        <form id="fullcamForm">
+            <h2>Event Details</h2>
+            
+            <div class="form-group">
+                <label for="eventName">Event Name *</label>
+                <input type="text" id="eventName" required value="Establish environmental plantings - block geometry">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="plantingDate">Planting Date *</label>
+                    <input type="date" id="plantingDate" value="2015-01-02" required>
+                    <div class="helper-text">Will be converted to YYYYMMDD format</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ageYears">Age (Years) *</label>
+                    <input type="number" id="ageYears" min="0" step="0.1" value="0.3" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="activeYearStart">Active Year Start *</label>
+                    <input type="number" id="activeYearStart" min="1900" max="2100" value="1990" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="activeYearEnd">Active Year End *</label>
+                    <input type="number" id="activeYearEnd" min="1900" max="2100" value="2100" required>
+                </div>
+            </div>
+
+            <h2>Species & Regime</h2>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="treeName">Tree Name *</label>
+                    <input type="text" id="treeName" value="Environmental plantings" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="speciesId">Species ID *</label>
+                    <input type="text" id="speciesId" value="7" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="regimeName">Regime Name *</label>
+                    <input type="text" id="regimeName" value="New Regime" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tyfCategory">TYF Category *</label>
+                    <select id="tyfCategory" value="BlockES" required>
+                        <option value="BlockES">BlockES</option>
+                        <option value="BeltH">BeltH</option>
+                        <option value="BeltL">BeltL</option>
+                    </select>
+                </div>
+            </div>
+
+            <h2>Initial Biomass (tonnes/ha)</h2>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="stemMass">Stem Mass *</label>
+                    <input type="number" id="stemMass" step="0.001" value="0.087" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="branchMass">Branch Mass *</label>
+                    <input type="number" id="branchMass" step="0.001" value="0.059" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="barkMass">Bark Mass *</label>
+                    <input type="number" id="barkMass" step="0.001" value="0.026" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="leafMass">Leaf Mass *</label>
+                    <input type="number" id="leafMass" step="0.001" value="0.039" required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="coarseRootMass">Coarse Root Mass *</label>
+                    <input type="number" id="coarseRootMass" step="0.001" value="0.074" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="fineRootMass">Fine Root Mass *</label>
+                    <input type="number" id="fineRootMass" step="0.1" value="0.014" required>
+                </div>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="subscriptionKey">API Subscription Key (if required)</label>
+                <input type="text" id="subscriptionKey" placeholder="Enter Ocp-Apim-Subscription-Key">
+                <div class="helper-text">Optional: Required if API needs authentication</div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn-primary">Generate Plot File</button>
+                <button type="button" class="btn-secondary" onclick="resetForm()">Reset</button>
+                <button type="button" class="btn-download" onclick="downloadPloFile()" id="downloadBtn" disabled>Download .plo</button>
+                <button type="button" class="btn-primary" onclick="submitToApi()" id="submitBtn" disabled>Submit to API</button>
+            </div>
+        </form>
+
+        <div id="output" class="output">
+            <h2>Generated Plot File</h2>
+            <button class="btn-secondary" onclick="copyToClipboard()">Copy to Clipboard</button>
+            <pre id="xmlOutput"></pre>
+        </div>
+
+        <div id="apiOutput" class="output">
+            <h2>API Response</h2>
+            <pre id="apiResponse"></pre>
+        </div>
+    </div>
+
+    <script type="module">
+        import { generateFullCAMPlotFile, submitToFullCAMApi } from './src/fullcam-eventq-generator.ts';
+
+        let generatedXml = '';
+        let currentConfig = null;
+
+        // Set defaults
+        const today = new Date();
+
+        // Form submission
+        document.getElementById('fullcamForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const plantingDate = document.getElementById('plantingDate').value.replace(/-/g, '');
+
+            currentConfig = {
+                event: {
+                    eventName: document.getElementById('eventName').value,
+                    plantingDate: plantingDate,
+                    ageYears: parseFloat(document.getElementById('ageYears').value),
+                    stemMass: parseFloat(document.getElementById('stemMass').value),
+                    branchMass: parseFloat(document.getElementById('branchMass').value),
+                    barkMass: parseFloat(document.getElementById('barkMass').value),
+                    leafMass: parseFloat(document.getElementById('leafMass').value),
+                    coarseRootMass: parseFloat(document.getElementById('coarseRootMass').value),
+                    fineRootMass: parseFloat(document.getElementById('fineRootMass').value),
+                    tyfCategory: document.getElementById('tyfCategory').value,
+                    treeName: document.getElementById('treeName').value,
+                    speciesId: document.getElementById('speciesId').value,
+                    regimeName: document.getElementById('regimeName').value,
+                    activeYearStart: parseInt(document.getElementById('activeYearStart').value),
+                    activeYearEnd: parseInt(document.getElementById('activeYearEnd').value)
+                }
+            };
+
+            generatedXml = generateFullCAMPlotFile(currentConfig);
+            document.getElementById('xmlOutput').textContent = generatedXml;
+            document.getElementById('output').classList.add('visible');
+            document.getElementById('downloadBtn').disabled = false;
+            document.getElementById('submitBtn').disabled = false;
+        });
+
+        window.submitToApi = async function() {
+            if (!currentConfig) return;
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Submitting...';
+            submitBtn.disabled = true;
+            
+            try {
+                const subscriptionKey = document.getElementById('subscriptionKey').value;
+                const result = await submitToFullCAMApi(currentConfig, undefined, subscriptionKey);
+                
+                // Format the response based on data type
+                let formattedResponse = '';
+                
+                if (result.success && result.dataType === 'csv') {
+                    // Display CSV data with proper line breaks
+                    formattedResponse = result.data;
+                } else {
+                    // Display JSON with formatting
+                    formattedResponse = JSON.stringify(result, null, 2);
+                }
+                
+                document.getElementById('apiResponse').textContent = formattedResponse;
+                document.getElementById('apiOutput').classList.add('visible');
+                
+                if (result.success) {
+                    alert('Successfully submitted to FullCAM API!');
+                } else {
+                    alert('API submission failed: ' + result.error);
+                }
+            } catch (error) {
+                document.getElementById('apiResponse').textContent = 'Error: ' + error.message;
+                document.getElementById('apiOutput').classList.add('visible');
+                alert('Error submitting to API: ' + error.message);
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        };
+
+        window.downloadPloFile = function() {
+            if (!generatedXml) return;
+            
+            const eventName = document.getElementById('eventName').value.replace(/\s+/g, '_');
+            const blob = new Blob([generatedXml], { type: 'application/xml' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${eventName}.plo`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        };
+
+        window.copyToClipboard = function() {
+            navigator.clipboard.writeText(generatedXml);
+        };
+
+        window.resetForm = function() {
+            document.getElementById('fullcamForm').reset();
+            document.getElementById('output').classList.remove('visible');
+            document.getElementById('apiOutput').classList.remove('visible');
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('submitBtn').disabled = true;
+            const today = new Date();
+            document.getElementById('plantingDate').value = today.toISOString().split('T')[0];
+            document.getElementById('activeYearStart').value = today.getFullYear();
+            document.getElementById('activeYearEnd').value = today.getFullYear() + 50;
+            generatedXml = '';
+            currentConfig = null;
+        };
+    </script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
-import * as turf from '@turf/turf';
+import { polygon, featureCollection, point } from '@turf/helpers';
+// @ts-ignore - Type definitions exist but module resolution fails
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { calculatePolygonArea, calculateCentroid } from './calculations';
 import { 
   getAustralianState, 
@@ -182,7 +184,7 @@ export function initializeMap(): mapboxgl.Map {
         return null;
       }
 
-      const point = turf.point([lng, lat]);
+      const pt = point([lng, lat]);
       
       // Query rendered features at the point location
       const screenPoint = map.project([lng, lat]);
@@ -197,7 +199,7 @@ export function initializeMap(): mapboxgl.Map {
         if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
           try {
             // Use turf to check if point is inside polygon
-            const isInside = turf.booleanPointInPolygon(point, feature.geometry as any);
+            const isInside = booleanPointInPolygon(pt, feature.geometry as any);
             
             if (isInside && feature.properties && feature.properties['SA4_NAME21']) {
               console.log('Found SA4 region:', feature.properties['SA4_NAME21']);

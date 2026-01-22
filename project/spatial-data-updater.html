@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial Data Updater</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            font-weight: normal;
+            cursor: pointer;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        .btn-primary:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 20px;
+            display: none;
+        }
+        .output.visible {
+            display: block;
+        }
+        .output h2 {
+            color: #666;
+            margin-top: 25px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 8px;
+        }
+        .section-divider {
+            margin: 30px 0;
+            border-top: 2px solid #e0e0e0;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .helper-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 3px;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ff9800;
+            font-weight: bold;
+        }
+        .response-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #fafafa;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .response-section.error {
+            border-left-color: #f44336;
+        }
+        .carbon-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .stat-unit {
+            font-size: 14px;
+            color: #666;
+            margin-left: 5px;
+        }
+        .section-header {
+            font-size: 14px;
+            font-weight: bold;
+            color: #666;
+            margin: 20px 0 10px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Spatial Data Updater</h1>
+        <p>Update spatial data for a site location by providing latitude and longitude coordinates.</p>
+        
+        <form id="spatialForm">
+            <div class="section-header">Site Location</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="latitude">Latitude *</label>
+                    <input type="number" id="latitude" step="0.0001" value="-33.8688" required>
+                    <div class="helper-text">Decimal degrees (-90 to 90)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="longitude">Longitude *</label>
+                    <input type="number" id="longitude" step="0.0001" value="151.2093" required>
+                    <div class="helper-text">Decimal degrees (-180 to 180)</div>
+                </div>
+            </div>
+
+            <div class="section-header">Planting Information</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="plantingName">Planting Name</label>
+                    <input type="text" id="plantingName" value="Example Environmental Planting" required>
+                    <div class="helper-text">Name of the environmental planting</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="plantingDate">Planting Date</label>
+                    <input type="number" id="plantingDate" step="1" min="19000101" max="21001231" value="20230701" required>
+                    <div class="helper-text">Date (e.g., 20230701)</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="plantingArea">Planting Area (hectares)</label>
+                <input type="number" id="plantingArea" step="0.01" min="0.01" value="1.0" required>
+                <div class="helper-text">Area in hectares (ha)</div>
+            </div>
+
+            <div class="section-header">Carbon Analysis Period</div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="carbonStartYear">Start Year</label>
+                    <input type="number" id="carbonStartYear" step="1" min="2000" max="2075" value="2024" required>
+                    <div class="helper-text">Analysis start year</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="carbonStartMonth">Start Month</label>
+                    <input type="number" id="carbonStartMonth" step="1" min="1" max="12" value="1" required>
+                    <div class="helper-text">Month (1-12)</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="carbonEndYear">End Year</label>
+                    <input type="number" id="carbonEndYear" step="1" min="2000" max="2075" value="2030" required>
+                    <div class="helper-text">Analysis end year</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="carbonEndMonth">End Month</label>
+                    <input type="number" id="carbonEndMonth" step="1" min="1" max="12" value="12" required>
+                    <div class="helper-text">Month (1-12)</div>
+                </div>
+            </div>
+
+            <div class="section-header">API Configuration</div>
+            <div class="form-group">
+                <label for="subscriptionKey">API Subscription Key</label>
+                <input type="text" id="subscriptionKey" value="c7ce17dce569418b8d3bf7f5a3cd14d3">
+                <div class="helper-text">ocpKey2024 for spatial data API</div>
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="runSimulation">
+                    <span>Run plot simulation after spatial update</span>
+                </label>
+                <div class="helper-text">If checked, will generate and run plantingPlotfileForSimulation.plo</div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn-primary" id="submitBtn">Submit</button>
+            </div>
+        </form>
+
+        <div id="output" class="output">
+            <h2>Response</h2>
+            
+            <!-- Spatial Update Response -->
+            <div id="spatialSection" class="response-section">
+                <h3>Spatial Data Update</h3>
+                <div id="spatialStatus"></div>
+                <pre id="spatialData"></pre>
+            </div>
+
+            <!-- Simulation Response (only shown when simulation is run) -->
+            <div id="simulationSection" class="response-section" style="display: none;">
+                <h3>Plot Simulation</h3>
+                <div id="simulationStatus"></div>
+                <pre id="simulationData"></pre>
+            </div>
+
+            <!-- Carbon Sequestration Calculation -->
+            <div id="carbonSection" class="response-section" style="display: none;">
+                <h3>Carbon Sequestration Analysis</h3>
+                <div id="carbonStatus"></div>
+                <div id="carbonStats" class="carbon-stats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { 
+            updateSpatialData, 
+            calculateCarbonSequestration, 
+            dateToDecimalYear,
+            calculateAreaCarbonMetrics 
+        } from './src/spatial-data-updater.ts';
+
+        // Form submission
+        document.getElementById('spatialForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Submitting...';
+            submitBtn.disabled = true;
+
+            const latitude = parseFloat(document.getElementById('latitude').value);
+            const longitude = parseFloat(document.getElementById('longitude').value);
+            const simulationStartYear = 2000;
+            const simulationEndYear = 2075;
+            const plantingDate = parseInt(document.getElementById('plantingDate').value);
+            const plantingName = document.getElementById('plantingName').value;
+            const plantingArea = parseFloat(document.getElementById('plantingArea').value);
+            const subscriptionKey = document.getElementById('subscriptionKey').value;
+            const runSimulation = document.getElementById('runSimulation').checked;
+
+            // Carbon analysis period
+            const carbonStartYear = parseInt(document.getElementById('carbonStartYear').value);
+            const carbonStartMonth = parseInt(document.getElementById('carbonStartMonth').value);
+            const carbonEndYear = parseInt(document.getElementById('carbonEndYear').value);
+            const carbonEndMonth = parseInt(document.getElementById('carbonEndMonth').value);
+
+            console.log('Submitting spatial data update...');
+            console.log('Coordinates:', { latitude, longitude });
+            console.log('Planting area:', plantingArea, 'ha');
+            console.log('Run simulation:', runSimulation);
+            console.log('Carbon analysis period:', { carbonStartYear, carbonStartMonth, carbonEndYear, carbonEndMonth });
+
+            try {
+                const result = await updateSpatialData(
+                    latitude, 
+                    longitude, 
+                    simulationStartYear, 
+                    simulationEndYear, 
+                    plantingDate, 
+                    plantingName, 
+                    subscriptionKey,
+                    runSimulation
+                );
+
+                // Show output section
+                document.getElementById('output').classList.add('visible');
+
+                // Check if result is a simulation response
+                const isSimulationResponse = runSimulation;
+
+                if (isSimulationResponse) {
+                    // Display simulation response
+                    const simulationSection = document.getElementById('simulationSection');
+                    const simulationStatus = document.getElementById('simulationStatus');
+                    const simulationData = document.getElementById('simulationData');
+                    
+                    simulationSection.style.display = 'block';
+                    
+                    if (result.success) {
+                        simulationSection.classList.remove('error');
+                        simulationStatus.innerHTML = '<p class="success">✓ Plot simulation completed successfully</p>';
+                    } else {
+                        simulationSection.classList.add('error');
+                        simulationStatus.innerHTML = `<p class="error">✗ Simulation failed: ${result.error || 'Unknown error'}</p>`;
+                    }
+
+                    if (result.data) {
+                        simulationData.textContent = typeof result.data === 'string' 
+                            ? result.data 
+                            : JSON.stringify(result.data, null, 2);
+                    } else {
+                        simulationData.textContent = JSON.stringify(result, null, 2);
+                    }
+
+                    // Calculate carbon sequestration
+                    if (result.success && result.data) {
+                        const carbonSection = document.getElementById('carbonSection');
+                        const carbonStatus = document.getElementById('carbonStatus');
+                        const carbonStats = document.getElementById('carbonStats');
+                        
+                        carbonSection.style.display = 'block';
+                        
+                        // Calculate for user-specified period
+                        const startDate = dateToDecimalYear(carbonStartYear, carbonStartMonth);
+                        const endDate = dateToDecimalYear(carbonEndYear, carbonEndMonth);
+                        
+                        const carbonResult = calculateCarbonSequestration(result, startDate, endDate);
+                        
+                        if (carbonResult.success) {
+                            carbonSection.classList.remove('error');
+                            carbonStatus.innerHTML = `<p class="success">✓ Carbon sequestration calculated successfully (${carbonStartYear}-${carbonStartMonth} to ${carbonEndYear}-${carbonEndMonth})</p>`;
+                            
+                            const years = endDate - startDate;
+                            
+                            // Use the new utility function for cleaner code
+                            const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea, years);
+                            
+                            carbonStats.innerHTML = `
+                                <div class="stat-card">
+                                    <div class="stat-label">Total Carbon (per hectare)</div>
+                                    <div class="stat-value">${metrics.totalCarbonPerHectare.toFixed(2)}<span class="stat-unit">tC/ha</span></div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Total Carbon (${plantingArea} ha)</div>
+                                    <div class="stat-value">${metrics.totalCarbonForArea.toFixed(2)}<span class="stat-unit">tC</span></div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Period</div>
+                                    <div class="stat-value">${years.toFixed(2)}<span class="stat-unit">years</span></div>
+                                </div>
+                            `;
+                        } else {
+                            carbonSection.classList.add('error');
+                            carbonStatus.innerHTML = `<p class="error">✗ Carbon calculation failed: ${carbonResult.error}</p>`;
+                            carbonStats.innerHTML = '';
+                        }
+                    } else {
+                        document.getElementById('carbonSection').style.display = 'none';
+                    }
+
+                    // Update spatial section
+                    const spatialSection = document.getElementById('spatialSection');
+                    const spatialStatus = document.getElementById('spatialStatus');
+                    const spatialData = document.getElementById('spatialData');
+                    
+                    spatialStatus.innerHTML = '<p class="success">✓ Spatial update completed (proceeding to simulation)</p>';
+                    spatialData.textContent = 'Spatial data updated successfully. See simulation results below.';
+                } else {
+                    // This is a spatial update only response
+                    const spatialSection = document.getElementById('spatialSection');
+                    const spatialStatus = document.getElementById('spatialStatus');
+                    const spatialData = document.getElementById('spatialData');
+                    
+                    if (result.success) {
+                        spatialSection.classList.remove('error');
+                        spatialStatus.innerHTML = '<p class="success">✓ Spatial data updated successfully</p>';
+                    } else {
+                        spatialSection.classList.add('error');
+                        spatialStatus.innerHTML = `<p class="error">✗ Update failed: ${result.error || 'Unknown error'}</p>`;
+                    }
+
+                    if (result.data) {
+                        spatialData.textContent = typeof result.data === 'string' 
+                            ? result.data 
+                            : JSON.stringify(result.data, null, 2);
+                    } else {
+                        spatialData.textContent = JSON.stringify(result, null, 2);
+                    }
+
+                    // Hide simulation and carbon sections
+                    document.getElementById('simulationSection').style.display = 'none';
+                    document.getElementById('carbonSection').style.display = 'none';
+                }
+
+            } catch (error) {
+                document.getElementById('output').classList.add('visible');
+                
+                const spatialSection = document.getElementById('spatialSection');
+                const spatialStatus = document.getElementById('spatialStatus');
+                const spatialData = document.getElementById('spatialData');
+                
+                spatialSection.classList.add('error');
+                spatialStatus.innerHTML = `<p class="error">✗ Error: ${error.message}</p>`;
+                spatialData.textContent = error.stack || error.message;
+                
+                document.getElementById('simulationSection').style.display = 'none';
+                document.getElementById('carbonSection').style.display = 'none';
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
