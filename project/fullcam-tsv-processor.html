@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FullCAM Planting Data Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .main-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        textarea {
+            width: 100%;
+            height: 250px;
+            font-family: monospace;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background-color: #007bff;
+        }
+        button.secondary:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .column {
+            flex: 1;
+        }
+        h2 {
+            margin-top: 0;
+            color: #666;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 8px;
+        }
+        .buttons {
+            margin-bottom: 10px;
+        }
+        .response-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #fafafa;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .response-section.error {
+            border-left-color: #f44336;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .carbon-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .stat-unit {
+            font-size: 14px;
+            color: #666;
+            margin-left: 5px;
+        }
+        .output {
+            margin-top: 20px;
+            display: none;
+        }
+        .output.visible {
+            display: block;
+        }
+        .section-divider {
+            margin: 30px 0;
+            border-top: 2px solid #e0e0e0;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+            font-size: 14px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        .helper-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <h1>FullCAM Planting Data Processor</h1>
+        <p>Convert TSV data to JSON, then process through FullCAM spatial data and simulation workflow.</p>
+        
+        <div class="container">
+            <div class="column">
+                <h2>Input (TSV)</h2>
+                <textarea id="input" placeholder="Paste your TSV data here...">Event Name	My cool thing			
+Latitude of planting center point	-37.30742414
+Longitude of planting center point	144.5516579
+Planting date	1-Jan-20
+Planting name	My cool thing
+Area in hectares	100
+	
+Carbon analysis start month	1-Jan-24
+Carbon analysis end month	31-Dec-25
+</textarea>
+                <div class="buttons">
+                    <button onclick="convert()">Convert to JSON</button>
+                </div>
+            </div>
+            <div class="column">
+                <h2>Output (JSON)</h2>
+                <div class="buttons">
+                    <button class="secondary" onclick="copyToClipboard()">Copy to Clipboard</button>
+                    <button onclick="processFullCAM()" id="processBtn" disabled>Process with FullCAM</button>
+                </div>
+                <pre id="output"></pre>
+            </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="form-group">
+            <label for="subscriptionKey">API Subscription Key</label>
+            <input type="text" id="subscriptionKey" value="c7ce17dce569418b8d3bf7f5a3cd14d3">
+            <div class="helper-text">ocpKey2024 for spatial data API</div>
+        </div>
+
+        <div id="fullcamOutput" class="output">
+            <h2>FullCAM Processing Results</h2>
+
+            
+            <!-- Spatial Update Response -->
+            <div id="spatialSection" class="response-section">
+                <h3>Spatial Data Update</h3>
+                <div id="spatialStatus"></div>
+                <pre id="spatialData"></pre>
+            </div>
+
+            <!-- Simulation Response -->
+            <div id="simulationSection" class="response-section" style="display: none;">
+                <h3>Plot Simulation</h3>
+                <div id="simulationStatus"></div>
+                <pre id="simulationData"></pre>
+            </div>
+
+            <!-- Carbon Sequestration Calculation -->
+            <div id="carbonSection" class="response-section" style="display: none;">
+                <h3>Carbon Sequestration Analysis</h3>
+                <div id="carbonStatus"></div>
+                <div id="carbonStats" class="carbon-stats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { 
+            updateSpatialData, 
+            calculateCarbonSequestration, 
+            dateToDecimalYear,
+            calculateAreaCarbonMetrics 
+        } from './src/spatial-data-updater.ts';
+
+        let currentJson = null;
+
+        function convertTsvToJson(tsvData) {
+            // Remove blank lines and split into lines
+            const lines = tsvData
+                .split('\n')
+                .filter(line => line.trim() !== '')
+                .map(line => line.split('\t'));
+            
+            const result = {};
+            
+            // Parse main event properties (first section)
+            let i = 0;
+            while (i < lines.length && lines[i][0] && lines[i][0] !== 'Wildfire event name') {
+                const key = lines[i][0];
+                const value = lines[i][1];
+                if (key && value) {
+                    result[key] = value;
+                }
+                i++;
+            }
+            
+            // Parse wildfire events table
+            if (i < lines.length && lines[i][0] === 'Wildfire event name') {
+                const headers = lines[i];
+                i++;
+                result['Wildfire events'] = [];
+                
+                while (i < lines.length && lines[i][0] && lines[i][0] !== 'Prescribed burning event name') {
+                    const event = {};
+                    headers.forEach((header, index) => {
+                        if (header && lines[i][index]) {
+                            event[header] = lines[i][index];
+                        }
+                    });
+                    if (Object.keys(event).length > 0) {
+                        result['Wildfire events'].push(event);
+                    }
+                    i++;
+                }
+            }
+            
+            // Parse prescribed burning events table
+            if (i < lines.length && lines[i][0] === 'Prescribed burning event name') {
+                const headers = lines[i];
+                i++;
+                result['Prescribed burning events'] = [];
+                
+                while (i < lines.length && lines[i][0] && lines[i][0] !== 'Simulation start date') {
+                    const event = {};
+                    headers.forEach((header, index) => {
+                        if (header && lines[i][index]) {
+                            event[header] = lines[i][index];
+                        }
+                    });
+                    if (Object.keys(event).length > 0) {
+                        result['Prescribed burning events'].push(event);
+                    }
+                    i++;
+                }
+            }
+            
+            // Parse remaining properties (simulation dates)
+            while (i < lines.length) {
+                const key = lines[i][0];
+                const value = lines[i][1];
+                if (key && value) {
+                    result[key] = value;
+                }
+                i++;
+            }
+            
+            return result;
+        }
+
+        // Parse date string like "1-Jan-20" or "31-Dec-25"
+        function parseDate(dateStr) {
+            const months = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+                'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+            };
+            
+            const parts = dateStr.split('-');
+            const day = parseInt(parts[0]);
+            const month = months[parts[1]];
+            const year = parseInt(parts[2]);
+            
+            // Convert 2-digit year to 4-digit
+            const fullYear = year < 50 ? 2000 + year : 1900 + year;
+            
+            return new Date(fullYear, month, day);
+        }
+
+        // Convert date to YYYYMMDD format
+        function dateToYYYYMMDD(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return parseInt(`${year}${month}${day}`);
+        }
+
+        window.convert = function() {
+            const input = document.getElementById('input').value;
+            const output = document.getElementById('output');
+            const processBtn = document.getElementById('processBtn');
+            
+            try {
+                currentJson = convertTsvToJson(input);
+                output.textContent = JSON.stringify(currentJson, null, 2);
+                processBtn.disabled = false;
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                processBtn.disabled = true;
+                currentJson = null;
+            }
+        }
+
+        window.copyToClipboard = function() {
+            const output = document.getElementById('output');
+            navigator.clipboard.writeText(output.textContent).then(() => {
+                alert('Copied to clipboard!');
+            }).catch(err => {
+                alert('Failed to copy: ' + err);
+            });
+        }
+
+        window.processFullCAM = async function() {
+            if (!currentJson) {
+                alert('Please convert TSV to JSON first');
+                return;
+            }
+
+            const processBtn = document.getElementById('processBtn');
+            const originalText = processBtn.textContent;
+            processBtn.textContent = 'Processing...';
+            processBtn.disabled = true;
+
+            try {
+                // Extract data from JSON
+                const latitude = parseFloat(currentJson['Latitude of planting center point']);
+                const longitude = parseFloat(currentJson['Longitude of planting center point']);
+                const plantingName = currentJson['Planting name'];
+                const plantingArea = parseFloat(currentJson['Area in hectares']);
+                const subscriptionKey = document.getElementById('subscriptionKey').value;
+
+                // Parse dates
+                const plantingDate = parseDate(currentJson['Planting date']);
+                const plantingDateYYYYMMDD = dateToYYYYMMDD(plantingDate);
+                
+                const carbonStartDate = parseDate(currentJson['Carbon analysis start month']);
+                const carbonEndDate = parseDate(currentJson['Carbon analysis end month']);
+                
+                const carbonStartYear = carbonStartDate.getFullYear();
+                const carbonStartMonth = carbonStartDate.getMonth() + 1;
+                const carbonEndYear = carbonEndDate.getFullYear();
+                const carbonEndMonth = carbonEndDate.getMonth() + 1;
+
+                console.log('Processing with FullCAM...');
+                console.log('Coordinates:', { latitude, longitude });
+                console.log('Planting date:', plantingDateYYYYMMDD);
+                console.log('Planting area:', plantingArea, 'ha');
+                console.log('Carbon period:', { carbonStartYear, carbonStartMonth, carbonEndYear, carbonEndMonth });
+
+                // Call updateSpatialData with runSimulation = true
+                const result = await updateSpatialData(
+                    latitude, 
+                    longitude, 
+                    2000,  // simulationStartYear
+                    2075,  // simulationEndYear
+                    plantingDateYYYYMMDD, 
+                    plantingName, 
+                    subscriptionKey,
+                    true   // runSimulation
+                );
+
+                // Show output section
+                document.getElementById('fullcamOutput').classList.add('visible');
+
+                // Display simulation response
+                const simulationSection = document.getElementById('simulationSection');
+                const simulationStatus = document.getElementById('simulationStatus');
+                const simulationData = document.getElementById('simulationData');
+                
+                simulationSection.style.display = 'block';
+                
+                if (result.success) {
+                    simulationSection.classList.remove('error');
+                    simulationStatus.innerHTML = '<p class="success">✓ Plot simulation completed successfully</p>';
+                } else {
+                    simulationSection.classList.add('error');
+                    simulationStatus.innerHTML = `<p class="error">✗ Simulation failed: ${result.error || 'Unknown error'}</p>`;
+                }
+
+                if (result.data) {
+                    simulationData.textContent = typeof result.data === 'string' 
+                        ? result.data 
+                        : JSON.stringify(result.data, null, 2);
+                } else {
+                    simulationData.textContent = JSON.stringify(result, null, 2);
+                }
+
+                // Update spatial section
+                const spatialSection = document.getElementById('spatialSection');
+                const spatialStatus = document.getElementById('spatialStatus');
+                const spatialData = document.getElementById('spatialData');
+                
+                spatialStatus.innerHTML = '<p class="success">✓ Spatial update completed (proceeding to simulation)</p>';
+                spatialData.textContent = 'Spatial data updated successfully. See simulation results below.';
+
+                // Calculate carbon sequestration
+                if (result.success && result.data) {
+                    const carbonSection = document.getElementById('carbonSection');
+                    const carbonStatus = document.getElementById('carbonStatus');
+                    const carbonStats = document.getElementById('carbonStats');
+                    
+                    carbonSection.style.display = 'block';
+                    
+                    const startDate = dateToDecimalYear(carbonStartYear, carbonStartMonth);
+                    const endDate = dateToDecimalYear(carbonEndYear, carbonEndMonth);
+                    
+                    const carbonResult = calculateCarbonSequestration(result, startDate, endDate);
+                    
+                    if (carbonResult.success) {
+                        carbonSection.classList.remove('error');
+                        carbonStatus.innerHTML = `<p class="success">✓ Carbon sequestration calculated successfully (${carbonStartYear}-${carbonStartMonth} to ${carbonEndYear}-${carbonEndMonth})</p>`;
+                        
+                        const years = endDate - startDate;
+                        const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea, years);
+                        
+                        carbonStats.innerHTML = `
+                            <div class="stat-card">
+                                <div class="stat-label">Total Carbon (per hectare)</div>
+                                <div class="stat-value">${metrics.totalCarbonPerHectare.toFixed(10)}<span class="stat-unit">tC/ha</span></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Carbon (${plantingArea} ha)</div>
+                                <div class="stat-value">${metrics.totalCarbonForArea.toFixed(10)}<span class="stat-unit">tC</span></div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Period</div>
+                                <div class="stat-value">${years.toFixed(2)}<span class="stat-unit">years</span></div>
+                            </div>
+                        `;
+                    } else {
+                        carbonSection.classList.add('error');
+                        carbonStatus.innerHTML = `<p class="error">✗ Carbon calculation failed: ${carbonResult.error}</p>`;
+                        carbonStats.innerHTML = '';
+                    }
+                } else {
+                    document.getElementById('carbonSection').style.display = 'none';
+                }
+
+            } catch (error) {
+                document.getElementById('fullcamOutput').classList.add('visible');
+                
+                const spatialSection = document.getElementById('spatialSection');
+                const spatialStatus = document.getElementById('spatialStatus');
+                const spatialData = document.getElementById('spatialData');
+                
+                spatialSection.classList.add('error');
+                spatialStatus.innerHTML = `<p class="error">✗ Error: ${error.message}</p>`;
+                spatialData.textContent = error.stack || error.message;
+                
+                document.getElementById('simulationSection').style.display = 'none';
+                document.getElementById('carbonSection').style.display = 'none';
+            } finally {
+                processBtn.textContent = originalText;
+                processBtn.disabled = false;
+            }
+        }
+
+        // Convert on page load
+        window.onload = convert;
+    </script>
+</body>
+</html>

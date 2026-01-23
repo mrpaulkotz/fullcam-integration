@@ -634,15 +634,15 @@ export function calculateCarbonSequestration(
 
     console.log(`Carbon sequestration calculation complete:`);
     console.log(`  Date range: ${startDate} - ${endDate}`);
-    console.log(`  Start carbon: ${startCarbon.toFixed(2)} tC/ha`);
-    console.log(`  End carbon: ${endCarbon.toFixed(2)} tC/ha`);
-    console.log(`  Carbon sequestered: ${totalCarbon.toFixed(2)} tC/ha`);
+    console.log(`  Start carbon: ${startCarbon.toFixed(10)} tC/ha`);
+    console.log(`  End carbon: ${endCarbon.toFixed(10)} tC/ha`);
+    console.log(`  Carbon sequestered: ${totalCarbon.toFixed(10)} tC/ha`);
 
     return {
       success: true,
-      totalCarbon: parseFloat(totalCarbon.toFixed(4)),
-      startCarbon: parseFloat(startCarbon.toFixed(4)),
-      endCarbon: parseFloat(endCarbon.toFixed(4)),
+      totalCarbon: parseFloat(totalCarbon.toFixed(10)),
+      startCarbon: parseFloat(startCarbon.toFixed(10)),
+      endCarbon: parseFloat(endCarbon.toFixed(10)),
       dataPoints: 2 // Start and end points
     };
 
@@ -709,7 +709,7 @@ export function calculateAverageAnnualSequestration(
     return {
       success: true,
       totalCarbon: result.totalCarbon,
-      averagePerYear: parseFloat(averagePerYear.toFixed(4)),
+      averagePerYear: parseFloat(averagePerYear.toFixed(10)),
       years: parseFloat(years.toFixed(2))
     };
 
@@ -731,7 +731,7 @@ export function calculateTotalCarbonForArea(
   carbonPerHectare: number,
   areaInHectares: number
 ): number {
-  return parseFloat((carbonPerHectare * areaInHectares).toFixed(4));
+  return parseFloat((carbonPerHectare * areaInHectares).toFixed(10));
 }
 
 /**
@@ -754,10 +754,9 @@ export function calculateAreaCarbonMetrics(
   const averagePerYearPerHectare = carbonResult.totalCarbon / years;
   
   return {
-    totalCarbonPerHectare: parseFloat(carbonResult.totalCarbon.toFixed(4)),
+    totalCarbonPerHectare: parseFloat(carbonResult.totalCarbon.toFixed(10)),
     totalCarbonForArea: calculateTotalCarbonForArea(carbonResult.totalCarbon, areaInHectares),
-    averagePerYearPerHectare: parseFloat(averagePerYearPerHectare.toFixed(4)),
+    averagePerYearPerHectare: parseFloat(averagePerYearPerHectare.toFixed(10)),
     averagePerYearForArea: calculateTotalCarbonForArea(averagePerYearPerHectare, areaInHectares)
   };
 }
-
