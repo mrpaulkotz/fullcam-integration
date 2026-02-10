@@ -52,12 +52,13 @@ function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoo
  */
 async function runPlotSimulation(
   plotContent: string,
-  subscriptionKey: string
+  subscriptionKey: string = SUBSCRIPTION_KEY
 ): Promise<SimulationResponse> {
   try {
+    const apiKey = subscriptionKey || SUBSCRIPTION_KEY;
     console.log('=== Running Plot Simulation ===');
     console.log('Plot content length:', plotContent.length);
-    console.log('Subscription key length:', subscriptionKey.length);
+    console.log('Subscription key length:', apiKey.length);
 
     let response: Response;
 
@@ -83,7 +84,7 @@ async function runPlotSimulation(
         body: JSON.stringify({
           plotContent,
           filename: 'plantingPlotfileForSimulation.plo',
-          subscriptionKey: subscriptionKey,
+          subscriptionKey: apiKey,
         }),
       });
     }
@@ -142,7 +143,7 @@ export async function updateSpatialData(
   simulationEndYear: number = 2075,
   plantingDate: number,
   plantingName: string,
-  subscriptionKey: string = 'c7ce17dce569418b8d3bf7f5a3cd14d3',
+  subscriptionKey: string = SUBSCRIPTION_KEY,
   runSimulation: boolean = false
 ): Promise<SpatialUpdateResponse | SimulationResponse> {
   try {
@@ -178,7 +179,7 @@ export async function updateSpatialData(
       response = await fetch(FULLCAM_API_URL, {
         method: 'POST',
         headers: {
-          'Ocp-Apim-Subscription-Key': subscriptionKey || SUBSCRIPTION_KEY,
+          'Ocp-Apim-Subscription-Key': apiKey,
         },
         body: formData,
       });
@@ -192,7 +193,7 @@ export async function updateSpatialData(
         body: JSON.stringify({
           plotContent,
           filename: 'siteForSpatialUpdate.plo',
-          subscriptionKey: subscriptionKey,
+          subscriptionKey: apiKey,
         }),
       });
     }
@@ -234,7 +235,7 @@ export async function updateSpatialData(
         details
       );
       
-      return await runPlotSimulation(simulationPlotContent, subscriptionKey);
+      return await runPlotSimulation(simulationPlotContent, apiKey);
     }
     
     return result;
@@ -288,9 +289,9 @@ export class SpatialDataUpdater {
   private apiBaseUrl: string;
   private subscriptionKey: string;
 
-  constructor(apiBaseUrl: string = API_BASE_URL, subscriptionKey: string = '') {
+  constructor(apiBaseUrl: string = API_BASE_URL, subscriptionKey: string = SUBSCRIPTION_KEY) {
     this.apiBaseUrl = apiBaseUrl;
-    this.subscriptionKey = subscriptionKey;
+    this.subscriptionKey = subscriptionKey || SUBSCRIPTION_KEY;
   }
 
   /**
