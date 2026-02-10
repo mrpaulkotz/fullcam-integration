@@ -306,7 +306,6 @@
             const plantingDate = parseInt(document.getElementById('plantingDate').value);
             const plantingName = document.getElementById('plantingName').value;
             const plantingArea = parseFloat(document.getElementById('plantingArea').value);
-            const subscriptionKey = document.getElementById('subscriptionKey').value;
             const runSimulation = document.getElementById('runSimulation').checked;
 
             // Carbon analysis period
@@ -329,7 +328,7 @@
                     simulationEndYear, 
                     plantingDate, 
                     plantingName, 
-                    subscriptionKey,
+                    '', // Use empty string, will default to environment variable
                     runSimulation
                 );
 

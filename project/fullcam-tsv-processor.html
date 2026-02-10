@@ -378,7 +378,6 @@ Carbon analysis end month	31-Dec-25
                 const longitude = parseFloat(currentJson['Longitude of planting center point']);
                 const plantingName = currentJson['Planting name'];
                 const plantingArea = parseFloat(currentJson['Area in hectares']);
-                const subscriptionKey = document.getElementById('subscriptionKey').value;
 
                 // Parse dates
                 const plantingDate = parseDate(currentJson['Planting date']);
@@ -406,7 +405,7 @@ Carbon analysis end month	31-Dec-25
                     2075,  // simulationEndYear
                     plantingDateYYYYMMDD, 
                     plantingName, 
-                    subscriptionKey,
+                    '', // Use empty string, will default to environment variable
                     true   // runSimulation
                 );
 
