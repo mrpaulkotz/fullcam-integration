@@ -9,8 +9,95 @@ export interface SiloWeatherData {
   rainfall: number;
   maxTemp: number;
   minTemp: number;
+  avgTemp: number; // Average temperature (mean of max and min)
   radiation: number;
   evaporation: number;
+  mpot: number; // Morton potential evapotranspiration over land
+  frostDays: number; // Number of days where minimum temperature was below 0°C
+}
+
+/**
+ * Classify climate based on weather data and elevation
+ * @param weatherData SILO weather data for a given year
+ * @param elevation Elevation in meters (can be null)
+ * @returns Climate classification string
+ */
+export function classifyClimate(weatherData: SiloWeatherData, elevation: number | null): string {
+  const { avgTemp, rainfall, frostDays, mpot } = weatherData;
+  
+  // Calculate rainfall to potential evapotranspiration ratio
+  const rainfallToETRatio = mpot > 0 ? rainfall / mpot : 0;
+
+  // Tropical montane
+  if (avgTemp >= 18.001 && frostDays < 7 && elevation !== null && elevation > 1000) {
+    return 'Tropical montane';
+  }
+  
+  // Tropical wet
+  if (avgTemp >= 18.001 && rainfall > 2000 && frostDays < 7) {
+    return 'Tropical wet';
+  }
+  
+  // Tropical moist
+  if (avgTemp >= 18.001 && rainfall >= 1000 && rainfall <= 2000 && frostDays < 7) {
+    return 'Tropical moist';
+  }
+  
+  // Tropical dry
+  if (avgTemp >= 18.001 && rainfall < 1000 && frostDays < 7) {
+    return 'Tropical dry';
+  }
+  
+  // Warm temperate moist
+  if (avgTemp >= 11 && avgTemp <= 18 && frostDays > 7 && rainfallToETRatio > 1) {
+    return 'Warm temperate moist';
+  }
+  
+  // Warm temperate dry
+  if (avgTemp >= 11 && avgTemp <= 18 && frostDays > 7 && rainfallToETRatio <= 1) {
+    return 'Warm temperate dry';
+  }
+  
+  // Cool temperate moist
+  if (avgTemp <= 10.999 && frostDays > 7 && rainfallToETRatio > 1) {
+    return 'Cool temperate moist';
+  }
+  
+  // Cool temperate dry
+  if (avgTemp <= 10.999 && frostDays > 7 && rainfallToETRatio <= 1) {
+    return 'Cool temperate dry';
+  }
+
+  // Warm temperate moist - low frost
+  if (avgTemp >= 11 && avgTemp <= 18 && frostDays <= 7 && rainfallToETRatio > 1) {
+    return 'Warm temperate moist - low frost';
+  }
+  
+  // Warm temperate dry - low frost
+  if (avgTemp >= 11 && avgTemp <= 18 && frostDays <= 7 && rainfallToETRatio <= 1) {
+    return 'Warm temperate dry - low frost';
+  }
+  
+  // Warm temperate moist - high temp
+  if (avgTemp >= 18.001 && frostDays > 7 && rainfallToETRatio > 1) {
+    return 'Warm temperate moist - high temp';
+  }
+  if (avgTemp >= 18.001 && frostDays > 7 && rainfallToETRatio <= 1) {
+    return 'Warm temperate dry - high temp';
+  }
+
+    // Cool temperate moist - low frost
+  if (avgTemp <= 10.999 && frostDays <= 7 && rainfallToETRatio > 1) {
+    return 'Cool temperate moist - low frost';
+  }
+  
+  // Cool temperate dry - low frost
+  if (avgTemp <= 10.999 && frostDays <= 7 && rainfallToETRatio <= 1) {
+    return 'Cool temperate dry - low frost';
+  }
+  
+  // Default case if none of the conditions match
+  return 'Unclassified';
 }
 
 /**
@@ -114,6 +201,9 @@ export async function fetchSiloWeatherData(
     let radiationCount = 0;
     let evaporationSum = 0;
     let evaporationCount = 0;
+    let mpotSum = 0;
+    let mpotCount = 0;
+    let frostDays = 0;
     let dataLineCount = 0;
 
     // Skip header lines (usually start with comments or parentheses)
@@ -126,13 +216,15 @@ export async function fetchSiloWeatherData(
 
       dataLineCount++;
       
-      // SILO format columns:
+      // SILO format columns (alldata):
       // 0=Date, 1=Day, 2=Date2, 3=T.Max, 4=Smx, 5=T.Min, 6=Smn, 7=Rain, 8=Srn, 9=Evap, 10=Sev, 11=Radn, 12=Ssl
+      // 13=VP, 14=Svp, 15=RHmaxT, 16=RHminT, 17=FAO56, 18=Mlake, 19=Mpot, 20=Mact, 21=Mwet, 22=Span, 23=Ssp, 24=EvSp, 25=Ses, 26=MSLPres, 27=Sp
       const maxTemp = parseFloat(parts[3]); // T.Max column
       const minTemp = parseFloat(parts[5]); // T.Min column
       const rain = parseFloat(parts[7]); // Rain column
       const evap = parseFloat(parts[9]); // Evap column
       const radiation = parseFloat(parts[11]); // Radn column
+      const mpot = parseFloat(parts[19]); // Mpot column (Morton potential evapotranspiration)
 
       // Log first few lines for debugging
       if (dataLineCount <= 3) {
@@ -149,6 +241,10 @@ export async function fetchSiloWeatherData(
       if (!isNaN(minTemp) && minTemp > -999 && minTemp < 999) {
         minTempSum += minTemp;
         minTempCount++;
+        // Count frost days (min temp below 0°C)
+        if (minTemp < 0) {
+          frostDays++;
+        }
       }
       if (!isNaN(radiation) && radiation >= 0 && radiation < 999) {
         radiationSum += radiation;
@@ -158,16 +254,27 @@ export async function fetchSiloWeatherData(
         evaporationSum += evap;
         evaporationCount++;
       }
+      if (!isNaN(mpot) && mpot >= 0 && mpot < 9999) {
+        mpotSum += mpot;
+        mpotCount++;
+      }
     }
 
     console.log(`SILO Data Summary: ${dataLineCount} lines processed, total rainfall: ${totalRainfall.toFixed(1)}mm`);
 
+    const avgMaxTemp = maxTempCount > 0 ? maxTempSum / maxTempCount : 0;
+    const avgMinTemp = minTempCount > 0 ? minTempSum / minTempCount : 0;
+    const avgTemp = (avgMaxTemp + avgMinTemp) / 2;
+
     return {
       rainfall: parseFloat(totalRainfall.toFixed(1)),
-      maxTemp: maxTempCount > 0 ? parseFloat((maxTempSum / maxTempCount).toFixed(1)) : 0,
-      minTemp: minTempCount > 0 ? parseFloat((minTempSum / minTempCount).toFixed(1)) : 0,
+      maxTemp: parseFloat(avgMaxTemp.toFixed(1)),
+      minTemp: parseFloat(avgMinTemp.toFixed(1)),
+      avgTemp: parseFloat(avgTemp.toFixed(1)),
       radiation: radiationCount > 0 ? parseFloat((radiationSum / radiationCount).toFixed(1)) : 0,
-      evaporation: parseFloat(evaporationSum.toFixed(1))
+      evaporation: parseFloat(evaporationSum.toFixed(1)),
+      mpot: parseFloat(mpotSum.toFixed(1)), // Total annual Morton potential evapotranspiration
+      frostDays: frostDays
     };
 
   } catch (error) {

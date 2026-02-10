@@ -8,11 +8,66 @@ import {
   getAustralianState, 
   getNearestRainfallSite, 
   getNearestMaxTempSite,
-  fetchSiloWeatherData
+  fetchSiloWeatherData,
+  classifyClimate
 } from './weather';
 
 // Mapbox access token
 mapboxgl.accessToken = 'pk.eyJ1IjoicGtvdHp6bmVhZ2NyYyIsImEiOiJjbWlxdDM4bGIwZTB3M2ZweTFveWIxZ3NwIn0.EGn8FxX3RLRQMOM5cN2QTA';
+
+/**
+ * Get elevation at a specific point using Mapbox Terrain-RGB tileset
+ * @param lng Longitude
+ * @param lat Latitude
+ * @returns Elevation in meters, or null if unable to fetch
+ */
+async function getElevation(lng: number, lat: number): Promise<number | null> {
+  try {
+    // Calculate tile coordinates for zoom level 15 (max resolution for terrain data)
+    const zoom = 15;
+    const tileX = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+    const tileY = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+    
+    // Fetch the terrain RGB tile
+    const tileUrl = `https://api.mapbox.com/v4/mapbox.terrain-rgb/${zoom}/${tileX}/${tileY}.pngraw?access_token=${mapboxgl.accessToken}`;
+    
+    const response = await fetch(tileUrl);
+    if (!response.ok) {
+      console.error('Failed to fetch terrain tile:', response.status);
+      return null;
+    }
+    
+    const blob = await response.blob();
+    const img = await createImageBitmap(blob);
+    
+    // Create a canvas to read pixel data
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.drawImage(img, 0, 0);
+    
+    // Calculate pixel position within the tile
+    const scale = Math.pow(2, zoom);
+    const pixelX = Math.floor(((lng + 180) / 360 * scale - tileX) * 256);
+    const pixelY = Math.floor(((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * scale - tileY) * 256);
+    
+    // Get RGB values at the pixel
+    const imageData = ctx.getImageData(pixelX, pixelY, 1, 1);
+    const [R, G, B] = imageData.data;
+    
+    // Decode elevation using the Mapbox formula:
+    // height = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)
+    const elevation = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1);
+    
+    return Math.round(elevation * 10) / 10; // Round to 1 decimal place
+  } catch (error) {
+    console.error('Error fetching elevation:', error);
+    return null;
+  }
+}
 
 export function initializeMap(): mapboxgl.Map {
   const map = new mapboxgl.Map({
@@ -232,22 +287,34 @@ export function initializeMap(): mapboxgl.Map {
         const [lng, lat] = feature.geometry.coordinates;
         
         // Show loading message
-        document.getElementById('coordinates')!.innerHTML = 'Loading weather data...';
+        document.getElementById('coordinates')!.innerHTML = 'Loading weather and elevation data...';
         
         const state = await getAustralianState(lng, lat);
         const weatherData = await fetchSiloWeatherData(lat, lng, selectedYear);
+        const elevation = await getElevation(lng, lat);
         const nearestRainfallSite = getNearestRainfallSite(map, lng, lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, lng, lat);
         const sa4Name = getSA4Name(lng, lat);
 
-        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, weatherData, sa4Name });
+        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherData, sa4Name });
+
+        let elevationInfo = '';
+        if (elevation !== null) {
+          elevationInfo = `<br>Elevation: ${elevation} m`;
+        }
 
         let weatherInfo = '';
         if (weatherData) {
+          const climateClass = classifyClimate(weatherData, elevation);
           weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
             `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
+            `Average temperature: ${weatherData.avgTemp}°C<br>` +
             `Average maximum temperature: ${weatherData.maxTemp}°C<br>` +
-            `Average minimum temperature: ${weatherData.minTemp}°C`;
+            `Average minimum temperature: ${weatherData.minTemp}°C<br>` +
+            `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
+            `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
+            `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
+            `<strong>Climate classification: ${climateClass}</strong>`;
         } else {
           weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
         }
@@ -272,7 +339,7 @@ export function initializeMap(): mapboxgl.Map {
         }
 
         document.getElementById('coordinates')!.innerHTML =
-          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
       }
       // Check if it's a polygon
       else if (feature.geometry.type === 'Polygon') {
@@ -285,18 +352,30 @@ export function initializeMap(): mapboxgl.Map {
         
         const state = await getAustralianState(centroid.lng, centroid.lat);
         const weatherData = await fetchSiloWeatherData(centroid.lat, centroid.lng, selectedYear);
+        const elevation = await getElevation(centroid.lng, centroid.lat);
         const nearestRainfallSite = getNearestRainfallSite(map, centroid.lng, centroid.lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, centroid.lng, centroid.lat);
         const sa4Name = getSA4Name(centroid.lng, centroid.lat);
 
-        console.log('Polygon centroid:', { latitude: centroid.lat, longitude: centroid.lng, state, weatherData, sa4Name });
+        console.log('Polygon centroid:', { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherData, sa4Name });
+
+        let elevationInfo = '';
+        if (elevation !== null) {
+          elevationInfo = `<br>Elevation (centroid): ${elevation} m`;
+        }
 
         let weatherInfo = '';
         if (weatherData) {
+          const climateClass = classifyClimate(weatherData, elevation);
           weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
             `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
+            `Average temperature: ${weatherData.avgTemp}°C<br>` +
             `Average maximum temperature: ${weatherData.maxTemp}°C<br>` +
-            `Average minimum temperature: ${weatherData.minTemp}°C`;
+            `Average minimum temperature: ${weatherData.minTemp}°C<br>` +
+            `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
+            `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
+            `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
+            `<strong>Climate classification: ${climateClass}</strong>`;
         } else {
           weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
         }
@@ -321,7 +400,7 @@ export function initializeMap(): mapboxgl.Map {
         }
 
         document.getElementById('coordinates')!.innerHTML =
-          `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+          `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
       }
     } else if (data.features.length === 0) {
       document.getElementById('coordinates')!.innerHTML = 'Draw on the map';
