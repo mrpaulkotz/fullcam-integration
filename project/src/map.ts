@@ -12,8 +12,12 @@ import {
   classifyClimate
 } from './weather';
 
-// Mapbox access token
-mapboxgl.accessToken = 'pk.eyJ1IjoicGtvdHp6bmVhZ2NyYyIsImEiOiJjbWlxdDM4bGIwZTB3M2ZweTFveWIxZ3NwIn0.EGn8FxX3RLRQMOM5cN2QTA';
+// Mapbox access token from environment variable
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+
+if (!mapboxgl.accessToken) {
+  console.error('VITE_MAPBOX_ACCESS_TOKEN is not set. Please add it to your .env file.');
+}
 
 /**
  * Get elevation at a specific point using Mapbox Terrain-RGB tileset
