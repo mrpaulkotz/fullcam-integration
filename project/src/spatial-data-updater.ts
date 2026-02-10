@@ -8,6 +8,8 @@ import { generateEnviroPlantingTemplate, type SiteCoordinates } from './fullcam-
 // Use environment variable or default to localhost for development
 const API_BASE_URL = import.meta.env.VITE_API_PROXY_URL || 'http://localhost:3001';
 const IS_PRODUCTION = !window.location.hostname.includes('localhost');
+const FULLCAM_API_URL = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation';
+const SUBSCRIPTION_KEY = import.meta.env.VITE_FULLCAM_SUBSCRIPTION_KEY || '';
 
 interface SpatialUpdateRequest {
   plotContent: string;
@@ -53,35 +55,57 @@ async function runPlotSimulation(
   subscriptionKey: string
 ): Promise<SimulationResponse> {
   try {
-    if (IS_PRODUCTION) {
-      throw new Error('API proxy not available in production. This feature requires a local development server.');
-    }
-    
     console.log('=== Running Plot Simulation ===');
     console.log('Plot content length:', plotContent.length);
     console.log('Subscription key length:', subscriptionKey.length);
 
-    const response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        plotContent,
-        filename: 'plantingPlotfileForSimulation.plo',
-        subscriptionKey: subscriptionKey,
-      }),
-    });
+    let response: Response;
+
+    if (IS_PRODUCTION) {
+      // In production, call the API directly
+      const formData = new FormData();
+      formData.append('file', new Blob([plotContent], { type: 'application/xml' }), 'plot.plo');
+
+      response = await fetch(FULLCAM_API_URL, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': subscriptionKey || SUBSCRIPTION_KEY,
+        },
+        body: formData,
+      });
+    } else {
+      // In development, use the proxy to avoid CORS
+      response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          plotContent,
+          filename: 'plantingPlotfileForSimulation.plo',
+          subscriptionKey: subscriptionKey,
+        }),
+      });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Simulation proxy error:', errorText);
+      console.error('Simulation error:', errorText);
       throw new Error(`Simulation failed: ${response.status} - ${errorText}`);
     }
 
-    const result = await response.json();
+    // Handle response based on environment
+    let result: any;
+    if (IS_PRODUCTION) {
+      // Direct API returns CSV
+      const csvData = await response.text();
+      result = { data: csvData, dataType: 'csv' };
+    } else {
+      // Proxy returns JSON wrapper
+      result = await response.json();
+    }
     
-    // Unescape response data
+    // Unescape response data if needed
     if (result.data && typeof result.data === 'string') {
       result.data = unescapeJsonString(result.data);
     } else if (result.data && typeof result.data === 'object') {
@@ -143,28 +167,54 @@ export async function updateSpatialData(
     console.log('Coordinates:', coords);
     console.log('Simulation period:', `${simulationStartYear} - ${simulationEndYear}`);
     
-    // 2. Send to proxy server (which will create the .plo file and post to API)
-    const response = await fetch('http://localhost:3001/api/update-spatial', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        plotContent,
-        filename: 'siteForSpatialUpdate.plo',
-        subscriptionKey: subscriptionKey,
-      }),
-    });
+    // 2. Send to API (direct in production, via proxy in development)
+    let response: Response;
+
+    if (IS_PRODUCTION) {
+      // In production, call the API directly
+      const formData = new FormData();
+      formData.append('file', new Blob([plotContent], { type: 'application/xml' }), 'siteForSpatialUpdate.plo');
+
+      response = await fetch(FULLCAM_API_URL, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': subscriptionKey || SUBSCRIPTION_KEY,
+        },
+        body: formData,
+      });
+    } else {
+      // In development, use the proxy to avoid CORS
+      response = await fetch(`${API_BASE_URL}/api/update-spatial`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          plotContent,
+          filename: 'siteForSpatialUpdate.plo',
+          subscriptionKey: subscriptionKey,
+        }),
+      });
+    }
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Proxy error:', errorText);
-      throw new Error(`Proxy failed: ${response.status} - ${errorText}`);
+      console.error('API error:', errorText);
+      throw new Error(`API request failed: ${response.status} - ${errorText}`);
     }
     
-    const result = await response.json();
+    // Handle response based on environment
+    let result: any;
+    if (IS_PRODUCTION) {
+      // Direct API returns CSV
+      const csvData = await response.text();
+      result = { success: true, data: csvData, dataType: 'csv' };
+    } else {
+      // Proxy returns JSON wrapper
+      result = await response.json();
+    }
     
-    // 5. Unescape characters in response
+    // Unescape characters in response if needed
     if (result.data && typeof result.data === 'string') {
       result.data = unescapeJsonString(result.data);
     } else if (result.data && typeof result.data === 'object') {
