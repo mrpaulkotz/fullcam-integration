@@ -147,6 +147,8 @@ export async function updateSpatialData(
   runSimulation: boolean = false
 ): Promise<SpatialUpdateResponse | SimulationResponse> {
   try {
+    const apiKey = subscriptionKey || SUBSCRIPTION_KEY;
+    
     // 1. Create coordinates and generate template
     const coords: SiteCoordinates = {
       siteLatitude: latitude,
