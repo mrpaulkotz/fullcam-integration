@@ -73,6 +73,9 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
       contentType: 'application/xml',
     });
 
+    // Get FormData as buffer
+    const formBuffer = formData.getBuffer();
+
     const response = await fetch(
       'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation',
       {
@@ -80,8 +83,9 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
         headers: {
           ...formData.getHeaders(),
           'Ocp-Apim-Subscription-Key': subscriptionKey,
+          'Content-Length': formBuffer.length.toString(),
         },
-        body: formData as any,
+        body: formBuffer,
       }
     );
 
