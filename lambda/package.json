@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "package": "npm run build && npm ci --production && zip -r lambda.zip node_modules index.js"
+    "package": "npm run build && npm ci --production && powershell Compress-Archive -Path node_modules,index.js -DestinationPath lambda.zip -Force"
   },
   "dependencies": {
     "form-data": "^4.0.0"

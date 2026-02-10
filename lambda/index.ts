@@ -3,14 +3,12 @@
  * Handles CORS and proxies requests to the FullCAM API
  */
 
-/// <reference types="node" />
-
 import FormDataNode = require('form-data');
 
-// Declare global fetch for AWS Lambda runtime
-declare global {
-  function fetch(url: string, options?: any): Promise<any>;
-}
+// AWS Lambda runtime provides these globally
+declare const Buffer: any;
+declare const fetch: any;
+declare const console: any;
 
 interface ProxyEvent {
   httpMethod: string;
