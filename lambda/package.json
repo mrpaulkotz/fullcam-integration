@@ -1,0 +1,17 @@
+{
+  "name": "fullcam-api-proxy-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda proxy for FullCAM API",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "npm run build && npm ci --production && zip -r lambda.zip node_modules index.js"
+  },
+  "dependencies": {
+    "form-data": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "typescript": "^5.2.2"
+  }
+}

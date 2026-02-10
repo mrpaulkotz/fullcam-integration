@@ -52,7 +52,7 @@ function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoo
 }
 
 /**
- * Submits plot file to FullCAM simulator API
+ * Submits plot file to FullCAM simulator API via proxy
  */
 async function runPlotSimulation(
   plotContent: string,
@@ -64,33 +64,18 @@ async function runPlotSimulation(
     console.log('Plot content length:', plotContent.length);
     console.log('Subscription key length:', apiKey.length);
 
-    let response: Response;
-
-    if (IS_PRODUCTION) {
-      // In production, call the API directly
-      const formData = new FormData();
-      formData.append('file', new Blob([plotContent], { type: 'application/xml' }), 'plot.plo');
-
-      response = await fetch(FULLCAM_API_URL, {
-        method: 'POST',
-        headers: {
-          'Ocp-Apim-Subscription-Key': subscriptionKey || SUBSCRIPTION_KEY,
-        },
-        body: formData,
-      });
-    } else {
-      // In development, use the proxy to avoid CORS
-      response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          plotContent,
-          filename: 'plantingPlotfileForSimulation.plo',
-          subscriptionKey: apiKey,
-        }),
-      });
+    // FullCAM API requires a proxy server due to CORS restrictions
+    const response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        plotContent,
+        filename: 'plantingPlotfileForSimulation.plo',
+        subscriptionKey: apiKey,
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -167,32 +152,16 @@ export async function updateSpatialData(
     
     // 2. Send to API via proxy (required due to CORS restrictions)
     const response = await fetch(`${API_BASE_URL}/api/update-spatial`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          plotContent,
-          filename: 'siteForSpatialUpdate.plo',
-          subscriptionKey: apiKey,
-        }),
-      });
-    }
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API error:', errorText);
-      throw new Error(`API request failed: ${response.status} - ${errorText}`);
-    }
-    
-    // Handle response based on environment
-    let result: any;
-    if (IS_PRODUCTION) {
-      // Direct API returns CSV
-      const csvData = await response.text();
-      result = { success: true, data: csvData, dataType: 'csv' };
-    } else {
-      // Proxy returns JSON wrapper
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        plotContent,
+        filename: 'siteForSpatialUpdate.plo',
+        subscriptionKey: apiKey,
+      }),
+    });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -201,7 +170,22 @@ export async function updateSpatialData(
     }
     
     // Proxy returns JSON wrapper
-    const result = await response.json();   result.data,
+    const result = await response.json();
+    
+    // Unescape characters in response if needed
+    if (result.data && typeof result.data === 'string') {
+      result.data = unescapeJsonString(result.data);
+    } else if (result.data && typeof result.data === 'object') {
+      result.data = unescapeJsonObject(result.data);
+    }
+    
+    console.log('Spatial data updated successfully');
+
+    // 6. If runSimulation flag is true, generate simulation plot and run it
+    if (runSimulation && result.success) {
+      console.log('Proceeding to run plot simulation...');
+      
+      const simulationPlotContent = generateEnviroPlantingTemplate(
         coords,
         dates,
         details
