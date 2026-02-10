@@ -5,6 +5,10 @@
 
 import { generateEnviroPlantingTemplate, type SiteCoordinates } from './fullcam-templates/template-enviro-plantings';
 
+// Use environment variable or default to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_PROXY_URL || 'http://localhost:3001';
+const IS_PRODUCTION = !window.location.hostname.includes('localhost');
+
 interface SpatialUpdateRequest {
   plotContent: string;
   filename?: string;
@@ -49,11 +53,15 @@ async function runPlotSimulation(
   subscriptionKey: string
 ): Promise<SimulationResponse> {
   try {
+    if (IS_PRODUCTION) {
+      throw new Error('API proxy not available in production. This feature requires a local development server.');
+    }
+    
     console.log('=== Running Plot Simulation ===');
     console.log('Plot content length:', plotContent.length);
     console.log('Subscription key length:', subscriptionKey.length);
 
-    const response = await fetch('http://localhost:3001/api/run-simulation', {
+    const response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -230,7 +238,7 @@ export class SpatialDataUpdater {
   private apiBaseUrl: string;
   private subscriptionKey: string;
 
-  constructor(apiBaseUrl: string = 'http://localhost:3001', subscriptionKey: string = '') {
+  constructor(apiBaseUrl: string = API_BASE_URL, subscriptionKey: string = '') {
     this.apiBaseUrl = apiBaseUrl;
     this.subscriptionKey = subscriptionKey;
   }
