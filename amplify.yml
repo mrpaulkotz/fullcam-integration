@@ -15,3 +15,8 @@ frontend:
   cache:
     paths:
       - project/node_modules/**/*
+customHeaders:
+  - pattern: '**/*.html'
+    headers:
+      - key: 'Cache-Control'
+        value: 'public, max-age=0, must-revalidate'
