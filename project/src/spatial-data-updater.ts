@@ -11,6 +11,17 @@ const IS_PRODUCTION = !window.location.hostname.includes('localhost');
 const FULLCAM_API_URL = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation';
 const SUBSCRIPTION_KEY = import.meta.env.VITE_FULLCAM_SUBSCRIPTION_KEY || '';
 
+// Debug logging
+console.log('🔧 API Configuration:', {
+  API_BASE_URL,
+  IS_PRODUCTION,
+  SUBSCRIPTION_KEY_SET: !!SUBSCRIPTION_KEY,
+  ENV_VARS: {
+    VITE_API_PROXY_URL: import.meta.env.VITE_API_PROXY_URL,
+    VITE_FULLCAM_SUBSCRIPTION_KEY: import.meta.env.VITE_FULLCAM_SUBSCRIPTION_KEY ? '***SET***' : 'NOT SET'
+  }
+});
+
 // Note: The FullCAM API does not support CORS, so direct browser calls will fail.
 // A proxy server is required in both development and production.
 const USE_PROXY = true; // Always use proxy due to CORS restrictions
