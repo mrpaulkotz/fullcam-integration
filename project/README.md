@@ -101,7 +101,8 @@ npm run preview
 5. **Add environment variables**:
    - In Amplify Console, go to "Environment variables"
    - Add `VITE_MAPBOX_ACCESS_TOKEN` with your Mapbox token
-   - Add any other variables from `.env.example` as needed
+   - Add `VITE_FULLCAM_SUBSCRIPTION_KEY` with your FullCAM API key
+   - Add `VITE_API_PROXY_URL` with your deployed proxy server URL (see Backend Proxy section below)
 
 6. **Deploy**:
    - Click "Save and deploy"
@@ -155,10 +156,40 @@ amplify publish
 All configuration is managed through environment variables in the `.env` file:
 
 - `VITE_MAPBOX_ACCESS_TOKEN` - Your Mapbox API token (required)
-- `VITE_FULLCAM_SUBSCRIPTION_KEY` - FullCAM API key (optional)
-- `VITE_API_PROXY_URL` - API proxy server URL (default: http://localhost:3001)
+- `VITE_FULLCAM_SUBSCRIPTION_KEY` - FullCAM API key (required for FullCAM features)
+- `VITE_API_PROXY_URL` - API proxy server URL (required for FullCAM features)
 
 **Security Note**: Never commit your `.env` file to Git. Use `.env.example` as a template.
+
+## Backend Proxy Server
+
+The FullCAM API does not support CORS requests from browsers, so a backend proxy server is **required** for production deployment of features that use the FullCAM API (spatial-data-updater, etc.).
+
+### Running Locally
+
+Start the proxy server:
+```bash
+cd project
+npm run proxy
+```
+
+This runs the proxy at `http://localhost:3001`.
+
+### Deploying to Production
+
+You need to deploy the proxy server (`src/api-proxy.ts`) separately. Options:
+
+**Option 1: AWS Lambda + API Gateway** (Recommended)
+1. Create a Lambda function with Node.js runtime
+2. Deploy the proxy code to Lambda
+3. Create an API Gateway to expose the Lambda
+4. Set `VITE_API_PROXY_URL` in Amplify to your API Gateway URL
+
+**Option 2: Separate Node.js Server**
+1. Deploy `api-proxy.ts` to a Node.js hosting service (Heroku, Railway, etc.)
+2. Set `VITE_API_PROXY_URL` in Amplify to your deployed server URL
+
+Without a deployed proxy server, the spatial-data-updater and related FullCAM features will not work in production.
 
 ## License
 
