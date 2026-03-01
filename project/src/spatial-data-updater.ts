@@ -567,7 +567,7 @@ export class SpatialDataUpdater {
  * @param simulationResponse The raw simulation response containing CSV data
  * @param startDate Decimal year start date (e.g., 2024.0 for Jan 2024)
  * @param endDate Decimal year end date (e.g., 2024.917 for Dec 2024)
- * @returns Difference in carbon mass of trees (tC/ha) between start and end dates
+ * @returns Difference in carbon mass of trees plus forest debris (tC/ha) between start and end dates
  */
 export function calculateCarbonSequestration(
   simulationResponse: SimulationResponse,
@@ -600,6 +600,7 @@ export function calculateCarbonSequestration(
     const headers = lines[0].split(',').map(h => h.trim());
     const decYearIndex = headers.findIndex(h => h.includes('Dec. Year'));
     const carbonIndex = headers.findIndex(h => h.includes('C mass of trees') && h.includes('tC/ha'));
+    const forestDebrisIndex = headers.findIndex(h => h.includes('C mass of forest debris') && h.includes('tC/ha'));
 
     if (decYearIndex === -1) {
       return {
@@ -615,11 +616,20 @@ export function calculateCarbonSequestration(
       };
     }
 
-    console.log('Column indices - Dec. Year:', decYearIndex, 'Carbon:', carbonIndex);
+    if (forestDebrisIndex === -1) {
+      return {
+        success: false,
+        error: 'Could not find "C mass of forest debris (tC/ha)" column in CSV data'
+      };
+    }
+
+    console.log('Column indices - Dec. Year:', decYearIndex, 'Trees Carbon:', carbonIndex, 'Forest Debris Carbon:', forestDebrisIndex);
 
     // Find carbon values at start and end dates (or closest available)
-    let startCarbon: number | null = null;
-    let endCarbon: number | null = null;
+    let startTreeCarbon: number | null = null;
+    let endTreeCarbon: number | null = null;
+    let startForestDebrisCarbon: number | null = null;
+    let endForestDebrisCarbon: number | null = null;
     let closestStartDiff = Infinity;
     let closestEndDiff = Infinity;
 
@@ -627,9 +637,10 @@ export function calculateCarbonSequestration(
       const values = lines[i].split(',').map(v => v.trim());
       
       const decYear = parseFloat(values[decYearIndex]);
-      const carbonValue = parseFloat(values[carbonIndex]);
+      const treeCarbonValue = parseFloat(values[carbonIndex]);
+      const forestDebrisCarbonValue = parseFloat(values[forestDebrisIndex]);
 
-      if (isNaN(decYear) || isNaN(carbonValue)) {
+      if (isNaN(decYear) || isNaN(treeCarbonValue) || isNaN(forestDebrisCarbonValue)) {
         continue;
       }
 
@@ -637,38 +648,47 @@ export function calculateCarbonSequestration(
       const startDiff = Math.abs(decYear - startDate);
       if (startDiff < closestStartDiff) {
         closestStartDiff = startDiff;
-        startCarbon = carbonValue;
+        startTreeCarbon = treeCarbonValue;
+        startForestDebrisCarbon = forestDebrisCarbonValue;
       }
 
       // Find closest value to end date
       const endDiff = Math.abs(decYear - endDate);
       if (endDiff < closestEndDiff) {
         closestEndDiff = endDiff;
-        endCarbon = carbonValue;
+        endTreeCarbon = treeCarbonValue;
+        endForestDebrisCarbon = forestDebrisCarbonValue;
       }
     }
 
-    if (startCarbon === null || endCarbon === null) {
+    if (
+      startTreeCarbon === null ||
+      endTreeCarbon === null ||
+      startForestDebrisCarbon === null ||
+      endForestDebrisCarbon === null
+    ) {
       return {
         success: false,
         error: 'Could not find carbon values for the specified date range'
       };
     }
 
-    // Calculate the difference (sequestration = end - start)
-    const totalCarbon = endCarbon - startCarbon;
+    // Calculate the differences (sequestration = end - start)
+    const treeCarbonDifference = endTreeCarbon - startTreeCarbon;
+    const forestDebrisDifference = endForestDebrisCarbon - startForestDebrisCarbon;
+    const totalCarbon = treeCarbonDifference + forestDebrisDifference;
 
     console.log(`Carbon sequestration calculation complete:`);
     console.log(`  Date range: ${startDate} - ${endDate}`);
-    console.log(`  Start carbon: ${startCarbon.toFixed(10)} tC/ha`);
-    console.log(`  End carbon: ${endCarbon.toFixed(10)} tC/ha`);
+    console.log(`  Tree carbon difference: ${treeCarbonDifference.toFixed(10)} tC/ha`);
+    console.log(`  Forest debris carbon difference: ${forestDebrisDifference.toFixed(10)} tC/ha`);
     console.log(`  Carbon sequestered: ${totalCarbon.toFixed(10)} tC/ha`);
 
     return {
       success: true,
       totalCarbon: parseFloat(totalCarbon.toFixed(10)),
-      startCarbon: parseFloat(startCarbon.toFixed(10)),
-      endCarbon: parseFloat(endCarbon.toFixed(10)),
+      startCarbon: parseFloat((startTreeCarbon + startForestDebrisCarbon).toFixed(10)),
+      endCarbon: parseFloat((endTreeCarbon + endForestDebrisCarbon).toFixed(10)),
       dataPoints: 2 // Start and end points
     };
 
