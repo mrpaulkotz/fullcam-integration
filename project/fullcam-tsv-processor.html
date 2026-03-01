@@ -469,7 +469,7 @@ Carbon analysis end month	31-Dec-25
                         const startPoint = (carbonStartYear * stepsPerYear) + (startStepInYear - 1);
                         const endPoint = (carbonEndYear * stepsPerYear) + (endStepInYear - 1);
                         const years = (endPoint - startPoint) / stepsPerYear;
-                        const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea, years);
+                        const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea);
                         
                         carbonStats.innerHTML = `
                             <div class="stat-card">

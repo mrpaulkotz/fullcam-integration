@@ -391,7 +391,7 @@
                             const years = (endPoint - startPoint) / stepsPerYear;
                             
                             // Use the new utility function for cleaner code
-                            const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea, years);
+                            const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea);
                             
                             carbonStats.innerHTML = `
                                 <div class="stat-card">

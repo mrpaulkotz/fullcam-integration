@@ -806,25 +806,17 @@ export function calculateTotalCarbonForArea(
  * Calculates comprehensive carbon metrics for a given area
  * @param carbonResult Result from calculateCarbonSequestration
  * @param areaInHectares Area in hectares
- * @param years Number of years in the analysis period
  * @returns Object containing all carbon metrics for the area
  */
 export function calculateAreaCarbonMetrics(
   carbonResult: { totalCarbon: number; startCarbon?: number; endCarbon?: number },
-  areaInHectares: number,
-  years: number
+  areaInHectares: number
 ): {
   totalCarbonPerHectare: number;
   totalCarbonForArea: number;
-  averagePerYearPerHectare: number;
-  averagePerYearForArea: number;
 } {
-  const averagePerYearPerHectare = carbonResult.totalCarbon / years;
-  
   return {
     totalCarbonPerHectare: parseFloat(carbonResult.totalCarbon.toFixed(10)),
-    totalCarbonForArea: calculateTotalCarbonForArea(carbonResult.totalCarbon, areaInHectares),
-    averagePerYearPerHectare: parseFloat(averagePerYearPerHectare.toFixed(10)),
-    averagePerYearForArea: calculateTotalCarbonForArea(averagePerYearPerHectare, areaInHectares)
+    totalCarbonForArea: calculateTotalCarbonForArea(carbonResult.totalCarbon, areaInHectares)
   };
 }
