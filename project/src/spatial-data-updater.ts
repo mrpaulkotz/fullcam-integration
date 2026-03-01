@@ -565,14 +565,18 @@ export class SpatialDataUpdater {
 /**
  * Parses CSV simulation response and calculates carbon sequestration
  * @param simulationResponse The raw simulation response containing CSV data
- * @param startDate Decimal year start date (e.g., 2024.0 for Jan 2024)
- * @param endDate Decimal year end date (e.g., 2024.917 for Dec 2024)
- * @returns Difference in carbon mass of trees plus forest debris (tC/ha) between start and end dates
+ * @param startYear Start year (e.g., 2024)
+ * @param startStepInYear Start step in year (e.g., 1)
+ * @param endYear End year (e.g., 2025)
+ * @param endStepInYear End step in year (e.g., 12)
+ * @returns Difference in carbon mass of trees plus forest debris (tC/ha) between start and end points
  */
 export function calculateCarbonSequestration(
   simulationResponse: SimulationResponse,
-  startDate: number,
-  endDate: number
+  startYear: number,
+  startStepInYear: number,
+  endYear: number,
+  endStepInYear: number
 ): { success: boolean; totalCarbon?: number; error?: string; dataPoints?: number; startCarbon?: number; endCarbon?: number } {
   try {
     if (!simulationResponse.success || !simulationResponse.data) {
@@ -598,14 +602,22 @@ export function calculateCarbonSequestration(
 
     // Get header row and find column indices
     const headers = lines[0].split(',').map(h => h.trim());
-    const decYearIndex = headers.findIndex(h => h.includes('Dec. Year'));
+    const yearIndex = headers.findIndex(h => h.toLowerCase() === 'year');
+    const stepInYearIndex = headers.findIndex(h => h.toLowerCase().includes('step in year'));
     const carbonIndex = headers.findIndex(h => h.includes('C mass of trees') && h.includes('tC/ha'));
     const forestDebrisIndex = headers.findIndex(h => h.includes('C mass of forest debris') && h.includes('tC/ha'));
 
-    if (decYearIndex === -1) {
+    if (yearIndex === -1) {
       return {
         success: false,
-        error: 'Could not find "Dec. Year" column in CSV data'
+        error: 'Could not find "Year" column in CSV data'
+      };
+    }
+
+    if (stepInYearIndex === -1) {
+      return {
+        success: false,
+        error: 'Could not find "Step in year" column in CSV data'
       };
     }
 
@@ -623,41 +635,43 @@ export function calculateCarbonSequestration(
       };
     }
 
-    console.log('Column indices - Dec. Year:', decYearIndex, 'Trees Carbon:', carbonIndex, 'Forest Debris Carbon:', forestDebrisIndex);
+    console.log('Column indices - Year:', yearIndex, 'Step in year:', stepInYearIndex, 'Trees Carbon:', carbonIndex, 'Forest Debris Carbon:', forestDebrisIndex);
 
-    // Find carbon values at start and end dates (or closest available)
+    // Find carbon values at exact start and end points
     let startTreeCarbon: number | null = null;
     let endTreeCarbon: number | null = null;
     let startForestDebrisCarbon: number | null = null;
     let endForestDebrisCarbon: number | null = null;
-    let closestStartDiff = Infinity;
-    let closestEndDiff = Infinity;
 
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim());
       
-      const decYear = parseFloat(values[decYearIndex]);
+      const yearValue = parseInt(values[yearIndex], 10);
+      const stepInYearValue = parseInt(values[stepInYearIndex], 10);
       const treeCarbonValue = parseFloat(values[carbonIndex]);
       const forestDebrisCarbonValue = parseFloat(values[forestDebrisIndex]);
 
-      if (isNaN(decYear) || isNaN(treeCarbonValue) || isNaN(forestDebrisCarbonValue)) {
+      if (isNaN(yearValue) || isNaN(stepInYearValue) || isNaN(treeCarbonValue) || isNaN(forestDebrisCarbonValue)) {
         continue;
       }
 
-      // Find closest value to start date
-      const startDiff = Math.abs(decYear - startDate);
-      if (startDiff < closestStartDiff) {
-        closestStartDiff = startDiff;
+      if (yearValue === startYear && stepInYearValue === startStepInYear) {
         startTreeCarbon = treeCarbonValue;
         startForestDebrisCarbon = forestDebrisCarbonValue;
       }
 
-      // Find closest value to end date
-      const endDiff = Math.abs(decYear - endDate);
-      if (endDiff < closestEndDiff) {
-        closestEndDiff = endDiff;
+      if (yearValue === endYear && stepInYearValue === endStepInYear) {
         endTreeCarbon = treeCarbonValue;
         endForestDebrisCarbon = forestDebrisCarbonValue;
+      }
+
+      if (
+        startTreeCarbon !== null &&
+        endTreeCarbon !== null &&
+        startForestDebrisCarbon !== null &&
+        endForestDebrisCarbon !== null
+      ) {
+        break;
       }
     }
 
@@ -669,7 +683,7 @@ export function calculateCarbonSequestration(
     ) {
       return {
         success: false,
-        error: 'Could not find carbon values for the specified date range'
+        error: `Could not find carbon values for start (${startYear}, step ${startStepInYear}) and end (${endYear}, step ${endStepInYear})`
       };
     }
 
@@ -679,7 +693,8 @@ export function calculateCarbonSequestration(
     const totalCarbon = treeCarbonDifference + forestDebrisDifference;
 
     console.log(`Carbon sequestration calculation complete:`);
-    console.log(`  Date range: ${startDate} - ${endDate}`);
+    console.log(`  Start point: Year ${startYear}, Step ${startStepInYear}`);
+    console.log(`  End point: Year ${endYear}, Step ${endStepInYear}`);
     console.log(`  Tree carbon difference: ${treeCarbonDifference.toFixed(10)} tC/ha`);
     console.log(`  Forest debris carbon difference: ${forestDebrisDifference.toFixed(10)} tC/ha`);
     console.log(`  Carbon sequestered: ${totalCarbon.toFixed(10)} tC/ha`);
@@ -703,6 +718,7 @@ export function calculateCarbonSequestration(
 
 /**
  * Converts a date to decimal year format
+ * @deprecated Use Year + Step in year inputs with `calculateCarbonSequestration` instead.
  * @param year Full year (e.g., 2024)
  * @param month Month (1-12)
  * @returns Decimal year value (e.g., 2024.083 for Feb 2024)
@@ -721,17 +737,17 @@ export function dateToDecimalYear(year: number, month: number): number {
  * Calculates average annual carbon sequestration rate
  * @param simulationResponse The raw simulation response containing CSV data
  * @param startYear Start year
- * @param startMonth Start month (1-12)
+ * @param startStepInYear Start step in year
  * @param endYear End year
- * @param endMonth End month (1-12)
+ * @param endStepInYear End step in year
  * @returns Average carbon sequestration per year and total
  */
 export function calculateAverageAnnualSequestration(
   simulationResponse: SimulationResponse,
   startYear: number,
-  startMonth: number,
+  startStepInYear: number,
   endYear: number,
-  endMonth: number
+  endStepInYear: number
 ): { 
   success: boolean; 
   totalCarbon?: number; 
@@ -740,16 +756,22 @@ export function calculateAverageAnnualSequestration(
   error?: string 
 } {
   try {
-    const startDate = dateToDecimalYear(startYear, startMonth);
-    const endDate = dateToDecimalYear(endYear, endMonth);
-    
-    const result = calculateCarbonSequestration(simulationResponse, startDate, endDate);
+    const result = calculateCarbonSequestration(
+      simulationResponse,
+      startYear,
+      startStepInYear,
+      endYear,
+      endStepInYear
+    );
     
     if (!result.success || result.totalCarbon === undefined) {
       return { success: false, error: result.error };
     }
 
-    const years = endDate - startDate;
+    const stepsPerYear = 12;
+    const startPoint = (startYear * stepsPerYear) + (startStepInYear - 1);
+    const endPoint = (endYear * stepsPerYear) + (endStepInYear - 1);
+    const years = (endPoint - startPoint) / stepsPerYear;
     const averagePerYear = years > 0 ? result.totalCarbon / years : 0;
 
     return {

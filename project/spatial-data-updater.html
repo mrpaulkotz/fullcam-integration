@@ -286,7 +286,6 @@
         import { 
             updateSpatialData, 
             calculateCarbonSequestration, 
-            dateToDecimalYear,
             calculateAreaCarbonMetrics 
         } from './src/spatial-data-updater.ts';
 
@@ -371,16 +370,25 @@
                         carbonSection.style.display = 'block';
                         
                         // Calculate for user-specified period
-                        const startDate = dateToDecimalYear(carbonStartYear, carbonStartMonth);
-                        const endDate = dateToDecimalYear(carbonEndYear, carbonEndMonth);
+                        const startStepInYear = carbonStartMonth;
+                        const endStepInYear = carbonEndMonth;
                         
-                        const carbonResult = calculateCarbonSequestration(result, startDate, endDate);
+                        const carbonResult = calculateCarbonSequestration(
+                            result,
+                            carbonStartYear,
+                            startStepInYear,
+                            carbonEndYear,
+                            endStepInYear
+                        );
                         
                         if (carbonResult.success) {
                             carbonSection.classList.remove('error');
                             carbonStatus.innerHTML = `<p class="success">✓ Carbon sequestration calculated successfully (${carbonStartYear}-${carbonStartMonth} to ${carbonEndYear}-${carbonEndMonth})</p>`;
                             
-                            const years = endDate - startDate;
+                            const stepsPerYear = 12;
+                            const startPoint = (carbonStartYear * stepsPerYear) + (startStepInYear - 1);
+                            const endPoint = (carbonEndYear * stepsPerYear) + (endStepInYear - 1);
+                            const years = (endPoint - startPoint) / stepsPerYear;
                             
                             // Use the new utility function for cleaner code
                             const metrics = calculateAreaCarbonMetrics(carbonResult, plantingArea, years);
