@@ -168,8 +168,8 @@ function renderCarbonChangeChart(container: HTMLElement | null, changes: StepCar
     .join('');
 
   container.innerHTML = `
-    <div class="carbon-chart-title">Carbon Change Per Step in Year (tC/ha)</div>
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="280" role="img" aria-label="Carbon change per step in year">
+    <div class="carbon-chart-title">Carbon Change Per Month (tC/ha)</div>
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="280" role="img" aria-label="Carbon change per month">
       <line x1="${margin.left}" y1="${zeroY.toFixed(2)}" x2="${(width - margin.right)}" y2="${zeroY.toFixed(2)}" stroke="#999" stroke-width="1" />
       <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${(height - margin.bottom)}" stroke="#ccc" stroke-width="1" />
       <line x1="${margin.left}" y1="${(height - margin.bottom)}" x2="${(width - margin.right)}" y2="${(height - margin.bottom)}" stroke="#ccc" stroke-width="1" />
@@ -244,8 +244,8 @@ function renderCarbonTotalChart(container: HTMLElement | null, totals: Cumulativ
     .join('');
 
   container.innerHTML = `
-    <div class="carbon-chart-title">Total Carbon Sequestered by Step in Year (tC/ha)</div>
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="280" role="img" aria-label="Total carbon sequestered by step in year">
+    <div class="carbon-chart-title">Total Carbon Sequestered by Month (tC/ha)</div>
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="280" role="img" aria-label="Total carbon sequestered by month">
       <line x1="${margin.left}" y1="${y(0).toFixed(2)}" x2="${(width - margin.right)}" y2="${y(0).toFixed(2)}" stroke="#999" stroke-width="1" />
       <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${(height - margin.bottom)}" stroke="#ccc" stroke-width="1" />
       <line x1="${margin.left}" y1="${(height - margin.bottom)}" x2="${(width - margin.right)}" y2="${(height - margin.bottom)}" stroke="#ccc" stroke-width="1" />
@@ -282,8 +282,8 @@ export function renderStepSequestrationCharts(
   const chartDataResult = extractStepCarbonChanges(simulationData, range);
   if (!chartDataResult.success || !chartDataResult.data) {
     const message = chartDataResult.error || 'No chart data available';
-    setEmptyChart(changeContainer, 'Carbon Change Per Step in Year', message);
-    setEmptyChart(totalContainer, 'Total Carbon Sequestered by Step in Year', message);
+    setEmptyChart(changeContainer, 'Carbon Change Per Month', message);
+    setEmptyChart(totalContainer, 'Total Carbon Sequestered by Month', message);
     return { success: false, error: message };
   }
 

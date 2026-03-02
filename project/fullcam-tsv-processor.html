@@ -98,16 +98,8 @@ Carbon analysis start month	1-Jan-24
 Carbon analysis end month	31-Dec-25
 </textarea>
                 <div class="buttons">
-                    <button onclick="convert()">Convert to JSON</button>
+                    <button onclick="processFullCAM()" id="processBtn">Process with FullCAM</button>
                 </div>
-            </div>
-            <div class="column">
-                <h2>Output (JSON)</h2>
-                <div class="buttons">
-                    <button class="secondary" onclick="copyToClipboard()">Copy to Clipboard</button>
-                    <button onclick="processFullCAM()" id="processBtn" disabled>Process with FullCAM</button>
-                </div>
-                <pre id="output"></pre>
             </div>
         </div>
 
@@ -255,34 +247,13 @@ Carbon analysis end month	31-Dec-25
             return parseInt(`${year}${month}${day}`);
         }
 
-        window.convert = function() {
+        window.processFullCAM = async function() {
             const input = document.getElementById('input').value;
-            const output = document.getElementById('output');
-            const processBtn = document.getElementById('processBtn');
             
             try {
                 currentJson = convertTsvToJson(input);
-                output.textContent = JSON.stringify(currentJson, null, 2);
-                processBtn.disabled = false;
             } catch (error) {
-                output.textContent = 'Error: ' + error.message;
-                processBtn.disabled = true;
-                currentJson = null;
-            }
-        }
-
-        window.copyToClipboard = function() {
-            const output = document.getElementById('output');
-            navigator.clipboard.writeText(output.textContent).then(() => {
-                alert('Copied to clipboard!');
-            }).catch(err => {
-                alert('Failed to copy: ' + err);
-            });
-        }
-
-        window.processFullCAM = async function() {
-            if (!currentJson) {
-                alert('Please convert TSV to JSON first');
+                alert(`Failed to parse TSV input: ${error.message}`);
                 return;
             }
 
@@ -446,8 +417,6 @@ Carbon analysis end month	31-Dec-25
             }
         }
 
-        // Convert on page load
-        window.onload = convert;
     </script>
 </body>
 </html>
