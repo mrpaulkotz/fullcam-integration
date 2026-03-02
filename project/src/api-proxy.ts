@@ -180,16 +180,17 @@ app.post('/api/update-spatial', async (req: Request<{}, {}, SubmitPlotRequest>, 
         contentType: contentType
       });
     } else {
+      const responseBody = await response.text();
+
       try {
-        const data = await response.json();
+        const data = JSON.parse(responseBody);
         console.log('Spatial Data API Success (JSON):', data);
         res.json({ success: true, data, dataType: 'json' });
       } catch (jsonError) {
-        const textData = await response.text();
-        console.log('Spatial Data API Success (fallback to text):', textData.substring(0, 200) + '...');
+        console.log('Spatial Data API Success (fallback to text):', responseBody.substring(0, 200) + '...');
         res.json({ 
           success: true, 
-          data: textData,
+          data: responseBody,
           dataType: 'text',
           contentType: contentType
         });

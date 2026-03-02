@@ -6,22 +6,13 @@
     <title>Spatial Data Updater</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
             max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
         }
         .container {
             background: white;
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
         }
         .form-group {
             margin-bottom: 15px;
@@ -61,12 +52,7 @@
             gap: 15px;
         }
         button {
-            padding: 10px 20px;
             margin: 5px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
         }
         .btn-primary {
             background-color: #4CAF50;
@@ -79,88 +65,15 @@
             background-color: #ccc;
             cursor: not-allowed;
         }
-        .output {
-            margin-top: 20px;
-            display: none;
-        }
-        .output.visible {
-            display: block;
-        }
         .output h2 {
             color: #666;
             margin-top: 25px;
             border-bottom: 2px solid #ddd;
             padding-bottom: 8px;
         }
-        .section-divider {
-            margin: 30px 0;
-            border-top: 2px solid #e0e0e0;
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 12px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .helper-text {
-            font-size: 12px;
-            color: #888;
-            margin-top: 3px;
-        }
-        .success {
-            color: #4CAF50;
-            font-weight: bold;
-        }
-        .error {
-            color: #f44336;
-            font-weight: bold;
-        }
         .warning {
             color: #ff9800;
             font-weight: bold;
-        }
-        .response-section {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #fafafa;
-            border-radius: 4px;
-            border-left: 4px solid #4CAF50;
-        }
-        .response-section.error {
-            border-left-color: #f44336;
-        }
-        .carbon-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 4px;
-            border: 1px solid #e0e0e0;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #888;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #4CAF50;
-        }
-        .stat-unit {
-            font-size: 14px;
-            color: #666;
-            margin-left: 5px;
         }
         .section-header {
             font-size: 14px;
@@ -278,6 +191,8 @@
                 <h3>Carbon Sequestration Analysis</h3>
                 <div id="carbonStatus"></div>
                 <div id="carbonStats" class="carbon-stats"></div>
+                <div id="carbonChart" class="carbon-chart"></div>
+                <div id="carbonTotalChart" class="carbon-chart"></div>
             </div>
         </div>
     </div>
@@ -288,6 +203,11 @@
             calculateCarbonSequestration, 
             calculateAreaCarbonMetrics 
         } from './src/spatial-data-updater.ts';
+        import {
+            clearCarbonCharts,
+            renderStepSequestrationCharts
+        } from './src/carbon-charts.ts';
+        import './src/ui-bundle.ts';
 
         // Form submission
         document.getElementById('spatialForm').addEventListener('submit', async function(e) {
@@ -407,10 +327,23 @@
                                     <div class="stat-value">${years.toFixed(2)}<span class="stat-unit">years</span></div>
                                 </div>
                             `;
+
+                            renderStepSequestrationCharts(
+                                result.data,
+                                {
+                                    startYear: carbonStartYear,
+                                    startStepInYear,
+                                    endYear: carbonEndYear,
+                                    endStepInYear
+                                },
+                                'carbonChart',
+                                'carbonTotalChart'
+                            );
                         } else {
                             carbonSection.classList.add('error');
                             carbonStatus.innerHTML = `<p class="error">✗ Carbon calculation failed: ${carbonResult.error}</p>`;
                             carbonStats.innerHTML = '';
+                            clearCarbonCharts('carbonChart', 'carbonTotalChart');
                         }
                     } else {
                         document.getElementById('carbonSection').style.display = 'none';

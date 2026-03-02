@@ -1,0 +1,21 @@
+.response-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #fafafa;
+    border-radius: 4px;
+    border-left: 4px solid #4CAF50;
+}
+
+.response-section.error {
+    border-left-color: #f44336;
+}
+
+.success {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.error {
+    color: #f44336;
+    font-weight: bold;
+}

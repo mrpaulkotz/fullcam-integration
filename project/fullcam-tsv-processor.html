@@ -6,22 +6,13 @@
     <title>FullCAM Planting Data Processor</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
             max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
         }
         .main-container {
             background: white;
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
         }
         textarea {
             width: 100%;
@@ -34,14 +25,9 @@
             border-radius: 4px;
         }
         button {
-            padding: 10px 20px;
             background-color: #4CAF50;
             color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
             margin-right: 10px;
-            border-radius: 4px;
         }
         button:hover {
             background-color: #45a049;
@@ -55,17 +41,6 @@
         }
         button.secondary:hover {
             background-color: #0056b3;
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 400px;
-            overflow-y: auto;
-            font-size: 12px;
         }
         .container {
             display: flex;
@@ -84,63 +59,6 @@
         .buttons {
             margin-bottom: 10px;
         }
-        .response-section {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #fafafa;
-            border-radius: 4px;
-            border-left: 4px solid #4CAF50;
-        }
-        .response-section.error {
-            border-left-color: #f44336;
-        }
-        .success {
-            color: #4CAF50;
-            font-weight: bold;
-        }
-        .error {
-            color: #f44336;
-            font-weight: bold;
-        }
-        .carbon-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }
-        .stat-card {
-            background: white;
-            padding: 15px;
-            border-radius: 4px;
-            border: 1px solid #e0e0e0;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #888;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #4CAF50;
-        }
-        .stat-unit {
-            font-size: 14px;
-            color: #666;
-            margin-left: 5px;
-        }
-        .output {
-            margin-top: 20px;
-            display: none;
-        }
-        .output.visible {
-            display: block;
-        }
-        .section-divider {
-            margin: 30px 0;
-            border-top: 2px solid #e0e0e0;
-        }
         .form-group {
             margin-bottom: 10px;
         }
@@ -158,11 +76,6 @@
             border-radius: 4px;
             box-sizing: border-box;
             font-size: 14px;
-        }
-        .helper-text {
-            font-size: 12px;
-            color: #888;
-            margin-top: 3px;
         }
     </style>
 </head>
@@ -223,6 +136,8 @@ Carbon analysis end month	31-Dec-25
                 <h3>Carbon Sequestration Analysis</h3>
                 <div id="carbonStatus"></div>
                 <div id="carbonStats" class="carbon-stats"></div>
+                <div id="carbonChart" class="carbon-chart"></div>
+                <div id="carbonTotalChart" class="carbon-chart"></div>
             </div>
         </div>
     </div>
@@ -233,6 +148,11 @@ Carbon analysis end month	31-Dec-25
             calculateCarbonSequestration, 
             calculateAreaCarbonMetrics 
         } from './src/spatial-data-updater.ts';
+        import {
+            clearCarbonCharts,
+            renderStepSequestrationCharts
+        } from './src/carbon-charts.ts';
+        import './src/ui-bundle.ts';
 
         let currentJson = null;
 
@@ -485,10 +405,23 @@ Carbon analysis end month	31-Dec-25
                                 <div class="stat-value">${years.toFixed(2)}<span class="stat-unit">years</span></div>
                             </div>
                         `;
+
+                        renderStepSequestrationCharts(
+                            result.data,
+                            {
+                                startYear: carbonStartYear,
+                                startStepInYear,
+                                endYear: carbonEndYear,
+                                endStepInYear
+                            },
+                            'carbonChart',
+                            'carbonTotalChart'
+                        );
                     } else {
                         carbonSection.classList.add('error');
                         carbonStatus.innerHTML = `<p class="error">✗ Carbon calculation failed: ${carbonResult.error}</p>`;
                         carbonStats.innerHTML = '';
+                        clearCarbonCharts('carbonChart', 'carbonTotalChart');
                     }
                 } else {
                     document.getElementById('carbonSection').style.display = 'none';

@@ -1,0 +1,30 @@
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+pre {
+    background-color: #f4f4f4;
+    padding: 15px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 12px;
+}
+
+.section-divider {
+    margin: 30px 0;
+    border-top: 2px solid #e0e0e0;
+}
+
+.helper-text {
+    font-size: 12px;
+    color: #888;
+    margin-top: 3px;
+}
