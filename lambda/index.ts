@@ -11,10 +11,18 @@ declare const fetch: any;
 declare const console: any;
 
 interface ProxyEvent {
-  httpMethod: string;
-  path: string;
-  body: string;
-  headers: Record<string, string>;
+  httpMethod?: string;
+  path?: string;
+  rawPath?: string;
+  body?: string;
+  isBase64Encoded?: boolean;
+  headers?: Record<string, string>;
+  requestContext?: {
+    http?: {
+      method?: string;
+      path?: string;
+    };
+  };
 }
 
 interface ProxyResponse {
@@ -49,9 +57,41 @@ function resolveProxyTarget(path: string): { apiUrl: string; defaultFilename: st
   };
 }
 
+function getRequestMethod(event: ProxyEvent): string {
+  return (
+    event.httpMethod ||
+    event.requestContext?.http?.method ||
+    'POST'
+  ).toUpperCase();
+}
+
+function getRequestPath(event: ProxyEvent): string {
+  return (
+    event.path ||
+    event.rawPath ||
+    event.requestContext?.http?.path ||
+    ''
+  );
+}
+
+function parseRequestBody(event: ProxyEvent): any {
+  if (!event.body) {
+    return {};
+  }
+
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body, 'base64').toString('utf-8')
+    : event.body;
+
+  return JSON.parse(rawBody);
+}
+
 export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
+  const requestMethod = getRequestMethod(event);
+  const requestPath = getRequestPath(event);
+
   // Handle CORS preflight
-  if (event.httpMethod === 'OPTIONS') {
+  if (requestMethod === 'OPTIONS') {
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
@@ -60,10 +100,10 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
   }
 
   try {
-    const target = resolveProxyTarget(event.path || '');
-    console.log('Lambda proxy route:', target.routeName, 'Path:', event.path);
+    const target = resolveProxyTarget(requestPath);
+    console.log('Lambda proxy route:', target.routeName, 'Path:', requestPath, 'Method:', requestMethod);
 
-    const body = JSON.parse(event.body);
+    const body = parseRequestBody(event);
     const { plotContent, filename, subscriptionKey } = body;
 
     if (!plotContent) {
@@ -123,37 +163,52 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
       };
     }
 
+    const responseBody = await response.text();
+
     if (
       contentType?.includes('application/xml') ||
       contentType?.includes('text/xml') ||
       contentType?.includes('text/plain') ||
       contentType?.includes('text/csv')
     ) {
-      const textData = await response.text();
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
         body: JSON.stringify({
           success: true,
-          data: textData,
+          data: responseBody,
           dataType: contentType?.includes('text/csv') ? 'csv' : 'text',
           contentType,
           route: target.routeName,
         }),
       };
     } else {
-      const data = await response.json();
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-          success: true,
-          data,
-          dataType: 'json',
-          contentType,
-          route: target.routeName,
-        }),
-      };
+      try {
+        const data = JSON.parse(responseBody);
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            success: true,
+            data,
+            dataType: 'json',
+            contentType,
+            route: target.routeName,
+          }),
+        };
+      } catch {
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            success: true,
+            data: responseBody,
+            dataType: 'text',
+            contentType,
+            route: target.routeName,
+          }),
+        };
+      }
     }
   } catch (error) {
     console.error('Lambda error:', error);
