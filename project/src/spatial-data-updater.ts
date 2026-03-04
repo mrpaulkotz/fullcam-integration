@@ -69,25 +69,56 @@ interface SimulationResponse {
   error?: string;
 }
 
+function isLikelyPlotFileContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return (
+    trimmed.startsWith('<?xml') ||
+    trimmed.includes('<Plot') ||
+    trimmed.includes('<Location>') ||
+    trimmed.includes('<SpatialData>')
+  );
+}
+
+function extractPlotContentCandidate(spatialData: any): string | null {
+  if (typeof spatialData === 'string') {
+    if (isLikelyPlotFileContent(spatialData)) {
+      return spatialData;
+    }
+
+    try {
+      const parsed = JSON.parse(spatialData);
+      return extractPlotContentCandidate(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  if (spatialData && typeof spatialData === 'object') {
+    const directCandidates = [spatialData.plotContent, spatialData.data, spatialData.xml, spatialData.content]
+      .filter((value): value is string => typeof value === 'string');
+
+    for (const candidate of directCandidates) {
+      if (isLikelyPlotFileContent(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Generates a .plo file for simulation using spatial update results
  */
 function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoordinates, dates: any, details: any): string {
-  if (typeof spatialData === 'string' && spatialData.trim().length > 0) {
-    console.log('Using spatial update response as simulation plot content');
-    return spatialData;
-  }
-
-  if (spatialData && typeof spatialData === 'object') {
-    if (typeof spatialData.plotContent === 'string' && spatialData.plotContent.trim().length > 0) {
-      console.log('Using spatialData.plotContent as simulation plot content');
-      return spatialData.plotContent;
-    }
-
-    if (typeof spatialData.data === 'string' && spatialData.data.trim().length > 0) {
-      console.log('Using spatialData.data as simulation plot content');
-      return spatialData.data;
-    }
+  const spatialResponsePlotContent = extractPlotContentCandidate(spatialData);
+  if (spatialResponsePlotContent) {
+    console.log('Using validated spatial update response as simulation plot content');
+    return spatialResponsePlotContent;
   }
 
   // Merge spatial data with original template structure
@@ -99,7 +130,8 @@ function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoo
   // Generate base template and merge with spatial data
   const baseTemplate = generateEnviroPlantingTemplate(coords, dates, details);
   
-  // Fallback to generated template when no spatial update response content is available
+  console.warn('Spatial update response did not contain valid plotfile XML; falling back to generated template');
+  // Fallback to generated template when no valid spatial update response content is available
   return baseTemplate;
 }
 
