@@ -19,3 +19,36 @@
     color: #888;
     padding: 10px 0;
 }
+
+.carbon-chart-svg-wrap {
+    position: relative;
+}
+
+.carbon-chart-tooltip {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    display: none;
+    background: rgba(34, 34, 34, 0.95);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.35;
+    border-radius: 4px;
+    padding: 8px 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+}
+
+.carbon-chart-tooltip .tooltip-label {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.carbon-chart-hover-guide {
+    stroke: #666;
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0;
+    transition: opacity 80ms linear;
+    pointer-events: none;
+}

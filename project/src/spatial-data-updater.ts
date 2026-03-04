@@ -10,6 +10,31 @@ const API_BASE_URL = import.meta.env.VITE_API_PROXY_URL || 'http://localhost:300
 const IS_PRODUCTION = !window.location.hostname.includes('localhost');
 const FULLCAM_API_URL = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation';
 const SUBSCRIPTION_KEY = import.meta.env.VITE_FULLCAM_SUBSCRIPTION_KEY || '';
+const SIMULATION_API_FILENAME = 'plantingPlotfileForSimulation.plo';
+
+function getTimestampedSimulationFilename(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+
+  return `plantingPlotfileForSimulation-${year}${month}${day}-${hours}${minutes}${seconds}.xml`;
+}
+
+function getTimestampedSpatialUpdateFilename(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+
+  return `spatial-update-response-${year}${month}${day}-${hours}${minutes}${seconds}.plo`;
+}
 
 // Debug logging
 console.log('🔧 API Configuration:', {
@@ -48,6 +73,23 @@ interface SimulationResponse {
  * Generates a .plo file for simulation using spatial update results
  */
 function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoordinates, dates: any, details: any): string {
+  if (typeof spatialData === 'string' && spatialData.trim().length > 0) {
+    console.log('Using spatial update response as simulation plot content');
+    return spatialData;
+  }
+
+  if (spatialData && typeof spatialData === 'object') {
+    if (typeof spatialData.plotContent === 'string' && spatialData.plotContent.trim().length > 0) {
+      console.log('Using spatialData.plotContent as simulation plot content');
+      return spatialData.plotContent;
+    }
+
+    if (typeof spatialData.data === 'string' && spatialData.data.trim().length > 0) {
+      console.log('Using spatialData.data as simulation plot content');
+      return spatialData.data;
+    }
+  }
+
   // Merge spatial data with original template structure
   const coords: SiteCoordinates = {
     siteLatitude: originalCoords.siteLatitude,
@@ -57,9 +99,66 @@ function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoo
   // Generate base template and merge with spatial data
   const baseTemplate = generateEnviroPlantingTemplate(coords, dates, details);
   
-  // If spatial data contains updated values, they would be merged here
-  // For now, return the base template (can be enhanced based on actual spatial data structure)
+  // Fallback to generated template when no spatial update response content is available
   return baseTemplate;
+}
+
+/**
+ * Downloads the simulation plotfile XML locally before API submission
+ */
+function downloadSimulationPlotFile(plotContent: string, filename: string = getTimestampedSimulationFilename()): void {
+  // Disabled by request: do not auto-download simulation plotfile before API call.
+  return;
+
+  /*
+  try {
+    const fileBlob = new Blob([plotContent], { type: 'application/xml;charset=utf-8' });
+    const fileUrl = URL.createObjectURL(fileBlob);
+    const link = document.createElement('a');
+
+    link.href = fileUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(fileUrl);
+    console.log(`Downloaded simulation plotfile: ${filename}`);
+  } catch (error) {
+    console.warn('Could not auto-download simulation plotfile before API call:', error);
+  }
+  */
+}
+
+/**
+ * Downloads the spatial update API response locally as a .plo file
+ */
+function downloadSpatialUpdateResponseAsPlotFile(responseData: any, filename: string = getTimestampedSpatialUpdateFilename()): void {
+  // Disabled by request: do not auto-download spatial update response payload.
+  return;
+
+  /*
+  try {
+    const content = typeof responseData === 'string'
+      ? responseData
+      : JSON.stringify(responseData, null, 2);
+
+    const fileBlob = new Blob([content], { type: 'application/octet-stream;charset=utf-8' });
+    const fileUrl = URL.createObjectURL(fileBlob);
+    const link = document.createElement('a');
+
+    link.href = fileUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(fileUrl);
+    console.log(`Downloaded spatial update response plotfile: ${filename}`);
+  } catch (error) {
+    console.warn('Could not auto-download spatial update response plotfile:', error);
+  }
+  */
 }
 
 /**
@@ -75,6 +174,8 @@ async function runPlotSimulation(
     console.log('Plot content length:', plotContent.length);
     console.log('Subscription key length:', apiKey.length);
 
+    // downloadSimulationPlotFile(plotContent); // Disabled by request
+
     // FullCAM API requires a proxy server due to CORS restrictions
     const response = await fetch(`${API_BASE_URL}/api/run-simulation`, {
       method: 'POST',
@@ -83,7 +184,7 @@ async function runPlotSimulation(
       },
       body: JSON.stringify({
         plotContent,
-        filename: 'plantingPlotfileForSimulation.plo',
+        filename: SIMULATION_API_FILENAME,
         subscriptionKey: apiKey,
       }),
     });
@@ -189,6 +290,10 @@ export async function updateSpatialData(
     } else if (result.data && typeof result.data === 'object') {
       result.data = unescapeJsonObject(result.data);
     }
+
+    // if (result.success && result.data) {
+    //   downloadSpatialUpdateResponseAsPlotFile(result.data); // Disabled by request
+    // }
     
     console.log('Spatial data updated successfully');
 
@@ -196,7 +301,8 @@ export async function updateSpatialData(
     if (runSimulation && result.success) {
       console.log('Proceeding to run plot simulation...');
       
-      const simulationPlotContent = generateEnviroPlantingTemplate(
+      const simulationPlotContent = generateSimulationPlotContent(
+        result.data,
         coords,
         dates,
         details
