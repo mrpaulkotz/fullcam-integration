@@ -30,6 +30,25 @@ const CORS_HEADERS = {
   'Content-Type': 'application/json',
 };
 
+const SIMULATION_API_URL = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation';
+const SPATIAL_UPDATE_API_URL = 'https://api.climatechange.gov.au/climate/carbon-accounting/2024/data/v1/2024/data-builder/update-spatialdata';
+
+function resolveProxyTarget(path: string): { apiUrl: string; defaultFilename: string; routeName: 'run-simulation' | 'update-spatial' } {
+  if (path.includes('/api/update-spatial')) {
+    return {
+      apiUrl: SPATIAL_UPDATE_API_URL,
+      defaultFilename: 'siteForSpatialUpdate.plo',
+      routeName: 'update-spatial',
+    };
+  }
+
+  return {
+    apiUrl: SIMULATION_API_URL,
+    defaultFilename: 'plantingPlotfileForSimulation.plo',
+    routeName: 'run-simulation',
+  };
+}
+
 export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -41,6 +60,9 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
   }
 
   try {
+    const target = resolveProxyTarget(event.path || '');
+    console.log('Lambda proxy route:', target.routeName, 'Path:', event.path);
+
     const body = JSON.parse(event.body);
     const { plotContent, filename, subscriptionKey } = body;
 
@@ -69,25 +91,22 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
     const formData = new FormDataNode();
     const buffer = Buffer.from(plotContent, 'utf-8');
     formData.append('file', buffer, {
-      filename: filename || 'plot.plo',
+      filename: filename || target.defaultFilename,
       contentType: 'application/xml',
     });
 
     // Get FormData as buffer
     const formBuffer = formData.getBuffer();
 
-    const response = await fetch(
-      'https://api.climatechange.gov.au/climate/carbon-accounting/2024/plot/v1/2024/fullcam-simulator/run-plotsimulation',
-      {
-        method: 'POST',
-        headers: {
-          ...formData.getHeaders(),
-          'Ocp-Apim-Subscription-Key': subscriptionKey,
-          'Content-Length': formBuffer.length.toString(),
-        },
-        body: formBuffer,
-      }
-    );
+    const response = await fetch(target.apiUrl, {
+      method: 'POST',
+      headers: {
+        ...formData.getHeaders(),
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'Content-Length': formBuffer.length.toString(),
+      },
+      body: formBuffer,
+    });
 
     const contentType = response.headers.get('content-type');
 
@@ -99,19 +118,27 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
         body: JSON.stringify({
           success: false,
           error: `API request failed: ${response.status} - ${errorText}`,
+          route: target.routeName,
         }),
       };
     }
 
-    if (contentType?.includes('text/csv') || contentType?.includes('text/plain')) {
-      const csvData = await response.text();
+    if (
+      contentType?.includes('application/xml') ||
+      contentType?.includes('text/xml') ||
+      contentType?.includes('text/plain') ||
+      contentType?.includes('text/csv')
+    ) {
+      const textData = await response.text();
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
         body: JSON.stringify({
           success: true,
-          data: csvData,
-          dataType: 'csv',
+          data: textData,
+          dataType: contentType?.includes('text/csv') ? 'csv' : 'text',
+          contentType,
+          route: target.routeName,
         }),
       };
     } else {
@@ -123,6 +150,8 @@ export const handler = async (event: ProxyEvent): Promise<ProxyResponse> => {
           success: true,
           data,
           dataType: 'json',
+          contentType,
+          route: target.routeName,
         }),
       };
     }
