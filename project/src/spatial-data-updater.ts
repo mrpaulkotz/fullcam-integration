@@ -83,32 +83,70 @@ function isLikelyPlotFileContent(content: string): boolean {
   );
 }
 
-function extractPlotContentCandidate(spatialData: any): string | null {
-  if (typeof spatialData === 'string') {
-    if (isLikelyPlotFileContent(spatialData)) {
-      return spatialData;
+function normalizePotentialXml(content: string): string {
+  const trimmed = content.trim();
+
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+}
+
+function findPlotContentRecursively(value: any, depth: number = 0): string | null {
+  if (depth > 5 || value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = normalizePotentialXml(value);
+    if (isLikelyPlotFileContent(normalized)) {
+      return normalized;
     }
 
     try {
-      const parsed = JSON.parse(spatialData);
-      return extractPlotContentCandidate(parsed);
+      const parsed = JSON.parse(normalized);
+      return findPlotContentRecursively(parsed, depth + 1);
     } catch {
       return null;
     }
   }
 
-  if (spatialData && typeof spatialData === 'object') {
-    const directCandidates = [spatialData.plotContent, spatialData.data, spatialData.xml, spatialData.content]
-      .filter((value): value is string => typeof value === 'string');
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = findPlotContentRecursively(item, depth + 1);
+      if (candidate) {
+        return candidate;
+      }
+    }
+    return null;
+  }
 
-    for (const candidate of directCandidates) {
-      if (isLikelyPlotFileContent(candidate)) {
+  if (typeof value === 'object') {
+    const preferredKeys = ['plotContent', 'data', 'xml', 'content', 'plotFile', 'plotfile'];
+
+    for (const key of preferredKeys) {
+      if (key in value) {
+        const candidate = findPlotContentRecursively((value as any)[key], depth + 1);
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    for (const nestedValue of Object.values(value as Record<string, any>)) {
+      const candidate = findPlotContentRecursively(nestedValue, depth + 1);
+      if (candidate) {
         return candidate;
       }
     }
   }
 
   return null;
+}
+
+function extractPlotContentCandidate(spatialData: any): string | null {
+  return findPlotContentRecursively(spatialData);
 }
 
 /**
@@ -130,6 +168,10 @@ function generateSimulationPlotContent(spatialData: any, originalCoords: SiteCoo
   // Generate base template and merge with spatial data
   const baseTemplate = generateEnviroPlantingTemplate(coords, dates, details);
   
+  const spatialDataShape = spatialData && typeof spatialData === 'object'
+    ? `object keys: ${Object.keys(spatialData).join(', ')}`
+    : `type: ${typeof spatialData}`;
+  console.warn('Spatial update response did not contain valid plotfile XML;', spatialDataShape);
   console.warn('Spatial update response did not contain valid plotfile XML; falling back to generated template');
   // Fallback to generated template when no valid spatial update response content is available
   return baseTemplate;
