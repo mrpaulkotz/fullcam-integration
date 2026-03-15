@@ -310,6 +310,19 @@ export function initializeMap(): mapboxgl.Map {
         let weatherInfo = '';
         if (weatherData) {
           const climateClass = classifyClimate(weatherData, elevation);
+          const climateClassFiveYearAverage = classifyClimate(weatherData.fiveYearAverages, elevation);
+          const fiveYearAverageInfo = weatherData.fiveYearAverages
+            ? `<br><br><strong>Five-year historical averages (${weatherData.fiveYearAverages.startYear}-${weatherData.fiveYearAverages.endYear}):</strong><br>` +
+              `Rainfall: ${weatherData.fiveYearAverages.rainfall} mm<br>` +
+              `Average temperature: ${weatherData.fiveYearAverages.avgTemp}°C<br>` +
+              `Average maximum temperature: ${weatherData.fiveYearAverages.maxTemp}°C<br>` +
+              `Average minimum temperature: ${weatherData.fiveYearAverages.minTemp}°C<br>` +
+              `Frost days: ${weatherData.fiveYearAverages.frostDays}<br>` +
+              `Morton potential ET: ${weatherData.fiveYearAverages.mpot} mm<br>` +
+              `Rainfall/ET ratio: ${(weatherData.fiveYearAverages.rainfall / weatherData.fiveYearAverages.mpot).toFixed(2)}<br>` +
+              `<strong>Climate classification: ${climateClassFiveYearAverage}</strong>`
+            : '';
+
           weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
             `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
             `Average temperature: ${weatherData.avgTemp}°C<br>` +
@@ -318,7 +331,8 @@ export function initializeMap(): mapboxgl.Map {
             `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
             `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
             `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
-            `<strong>Climate classification: ${climateClass}</strong>`;
+            `<strong>Climate classification: ${climateClass}</strong>` +
+            fiveYearAverageInfo;
         } else {
           weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
         }
@@ -371,6 +385,19 @@ export function initializeMap(): mapboxgl.Map {
         let weatherInfo = '';
         if (weatherData) {
           const climateClass = classifyClimate(weatherData, elevation);
+          const climateClassFiveYearAverage = classifyClimate(weatherData.fiveYearAverages, elevation);
+          const fiveYearAverageInfo = weatherData.fiveYearAverages
+            ? `<br><br><strong>Five-year historical averages (${weatherData.fiveYearAverages.startYear}-${weatherData.fiveYearAverages.endYear}):</strong><br>` +
+              `Rainfall: ${weatherData.fiveYearAverages.rainfall} mm<br>` +
+              `Average temperature: ${weatherData.fiveYearAverages.avgTemp}°C<br>` +
+              `Average maximum temperature: ${weatherData.fiveYearAverages.maxTemp}°C<br>` +
+              `Average minimum temperature: ${weatherData.fiveYearAverages.minTemp}°C<br>` +
+              `Frost days: ${weatherData.fiveYearAverages.frostDays}<br>` +
+              `Morton potential ET: ${weatherData.fiveYearAverages.mpot} mm<br>` +
+              `Rainfall/ET ratio: ${(weatherData.fiveYearAverages.rainfall / weatherData.fiveYearAverages.mpot).toFixed(2)}<br>` +
+              `<strong>Climate classification: ${climateClassFiveYearAverage}</strong>`
+            : '';
+
           weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
             `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
             `Average temperature: ${weatherData.avgTemp}°C<br>` +
@@ -379,7 +406,8 @@ export function initializeMap(): mapboxgl.Map {
             `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
             `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
             `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
-            `<strong>Climate classification: ${climateClass}</strong>`;
+            `<strong>Climate classification: ${climateClass}</strong>` +
+            fiveYearAverageInfo;
         } else {
           weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
         }

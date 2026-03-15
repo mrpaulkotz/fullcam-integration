@@ -14,7 +14,25 @@ export interface SiloWeatherData {
   evaporation: number;
   mpot: number; // Morton potential evapotranspiration over land
   frostDays: number; // Number of days where minimum temperature was below 0°C
+  fiveYearAverages: SiloFiveYearAverages | null;
 }
+
+export interface SiloFiveYearAverages {
+  startYear: number;
+  endYear: number;
+  yearsAveraged: number;
+  rainfall: number;
+  avgTemp: number;
+  maxTemp: number;
+  minTemp: number;
+  frostDays: number;
+  mpot: number;
+}
+
+export type ClimateClassificationInput = Pick<
+  SiloWeatherData,
+  'rainfall' | 'avgTemp' | 'frostDays' | 'mpot'
+>;
 
 /**
  * Classify climate based on weather data and elevation
@@ -22,78 +40,54 @@ export interface SiloWeatherData {
  * @param elevation Elevation in meters (can be null)
  * @returns Climate classification string
  */
-export function classifyClimate(weatherData: SiloWeatherData, elevation: number | null): string {
+export function classifyClimate(weatherData: ClimateClassificationInput | null, elevation: number | null): string {
+  if (!weatherData) {
+    return 'Unclassified';
+  }
+
   const { avgTemp, rainfall, frostDays, mpot } = weatherData;
   
   // Calculate rainfall to potential evapotranspiration ratio
   const rainfallToETRatio = mpot > 0 ? rainfall / mpot : 0;
 
   // Tropical montane
-  if (avgTemp >= 18.001 && frostDays < 7 && elevation !== null && elevation > 1000) {
+  if (avgTemp >= 18.001 && frostDays <= 7 && elevation !== null && elevation >= 1000.001) {
     return 'Tropical montane';
   }
   
   // Tropical wet
-  if (avgTemp >= 18.001 && rainfall > 2000 && frostDays < 7) {
+  if (avgTemp >= 18.001 && rainfall >= 2000.001 && frostDays <= 7) {
     return 'Tropical wet';
   }
   
   // Tropical moist
-  if (avgTemp >= 18.001 && rainfall >= 1000 && rainfall <= 2000 && frostDays < 7) {
+  if (avgTemp >= 18.001 && rainfall >= 1000.001 && rainfall <= 2000 && frostDays <= 7) {
     return 'Tropical moist';
   }
   
   // Tropical dry
-  if (avgTemp >= 18.001 && rainfall < 1000 && frostDays < 7) {
+  if (avgTemp >= 18.001 && rainfall < 1000.001 && frostDays <= 7) {
     return 'Tropical dry';
   }
   
   // Warm temperate moist
-  if (avgTemp >= 11 && avgTemp <= 18 && frostDays > 7 && rainfallToETRatio > 1) {
+  if (avgTemp >= 10.001 && rainfallToETRatio > 1) {
     return 'Warm temperate moist';
   }
   
   // Warm temperate dry
-  if (avgTemp >= 11 && avgTemp <= 18 && frostDays > 7 && rainfallToETRatio <= 1) {
+  if (avgTemp >= 10.001 && rainfallToETRatio <= 1) {
     return 'Warm temperate dry';
   }
   
   // Cool temperate moist
-  if (avgTemp <= 10.999 && frostDays > 7 && rainfallToETRatio > 1) {
+  if (avgTemp <= 10 && rainfallToETRatio > 1) {
     return 'Cool temperate moist';
   }
   
   // Cool temperate dry
-  if (avgTemp <= 10.999 && frostDays > 7 && rainfallToETRatio <= 1) {
+  if (avgTemp <= 10 && rainfallToETRatio <= 1) {
     return 'Cool temperate dry';
-  }
-
-  // Warm temperate moist - low frost
-  if (avgTemp >= 11 && avgTemp <= 18 && frostDays <= 7 && rainfallToETRatio > 1) {
-    return 'Warm temperate moist - low frost';
-  }
-  
-  // Warm temperate dry - low frost
-  if (avgTemp >= 11 && avgTemp <= 18 && frostDays <= 7 && rainfallToETRatio <= 1) {
-    return 'Warm temperate dry - low frost';
-  }
-  
-  // Warm temperate moist - high temp
-  if (avgTemp >= 18.001 && frostDays > 7 && rainfallToETRatio > 1) {
-    return 'Warm temperate moist - high temp';
-  }
-  if (avgTemp >= 18.001 && frostDays > 7 && rainfallToETRatio <= 1) {
-    return 'Warm temperate dry - high temp';
-  }
-
-    // Cool temperate moist - low frost
-  if (avgTemp <= 10.999 && frostDays <= 7 && rainfallToETRatio > 1) {
-    return 'Cool temperate moist - low frost';
-  }
-  
-  // Cool temperate dry - low frost
-  if (avgTemp <= 10.999 && frostDays <= 7 && rainfallToETRatio <= 1) {
-    return 'Cool temperate dry - low frost';
   }
   
   // Default case if none of the conditions match
@@ -168,18 +162,22 @@ export async function testRainfallCalculation(): Promise<void> {
 /**
  * Fetch weather data from SILO DataDrill API
  */
-export async function fetchSiloWeatherData(
+function buildSiloDataDrillUrl(lat: number, lon: number, year: number): string {
+  const startDate = `${year}0101`;
+  const endDate = `${year}1231`;
+
+  return `https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php?` +
+    `start=${startDate}&finish=${endDate}&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}&` +
+    `format=alldata&username=pkotz@zneagcrc.com.au&password=apirequest`;
+}
+
+async function fetchSiloWeatherDataForYear(
   lat: number,
   lon: number,
-  year: string
+  year: number
 ): Promise<SiloWeatherData | null> {
   try {
-    const startDate = `${year}0101`;
-    const endDate = `${year}1231`;
-    
-    const url = `https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php?` +
-      `start=${startDate}&finish=${endDate}&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}&` +
-      `format=alldata&username=pkotz@zneagcrc.com.au&password=apirequest`;
+    const url = buildSiloDataDrillUrl(lat, lon, year);
 
     const response = await fetch(url);
     
@@ -260,7 +258,7 @@ export async function fetchSiloWeatherData(
       }
     }
 
-    console.log(`SILO Data Summary: ${dataLineCount} lines processed, total rainfall: ${totalRainfall.toFixed(1)}mm`);
+    console.log(`SILO Data Summary (${year}): ${dataLineCount} lines processed, total rainfall: ${totalRainfall.toFixed(1)}mm`);
 
     const avgMaxTemp = maxTempCount > 0 ? maxTempSum / maxTempCount : 0;
     const avgMinTemp = minTempCount > 0 ? minTempSum / minTempCount : 0;
@@ -274,13 +272,88 @@ export async function fetchSiloWeatherData(
       radiation: radiationCount > 0 ? parseFloat((radiationSum / radiationCount).toFixed(1)) : 0,
       evaporation: parseFloat(evaporationSum.toFixed(1)),
       mpot: parseFloat(mpotSum.toFixed(1)), // Total annual Morton potential evapotranspiration
-      frostDays: frostDays
+      frostDays: frostDays,
+      fiveYearAverages: null
     };
 
   } catch (error) {
-    console.error('Error fetching SILO weather data:', error);
+    console.error(`Error fetching SILO weather data for ${year}:`, error);
     return null;
   }
+}
+
+/**
+ * Fetch weather data from SILO DataDrill API for selected year, plus 5-year historical averages.
+ * Historical averages are calculated across the selected year and 4 preceding years.
+ */
+export async function fetchSiloWeatherData(
+  lat: number,
+  lon: number,
+  year: string
+): Promise<SiloWeatherData | null> {
+  const selectedYear = parseInt(year, 10);
+  if (isNaN(selectedYear)) {
+    console.error('Invalid year supplied to fetchSiloWeatherData:', year);
+    return null;
+  }
+
+  const startYear = selectedYear - 4;
+  const yearsToFetch: number[] = [];
+  for (let y = startYear; y <= selectedYear; y++) {
+    yearsToFetch.push(y);
+  }
+
+  const yearResults = await Promise.all(
+    yearsToFetch.map((targetYear) => fetchSiloWeatherDataForYear(lat, lon, targetYear))
+  );
+
+  const selectedYearIndex = yearsToFetch.indexOf(selectedYear);
+  const selectedYearData = selectedYearIndex >= 0 ? yearResults[selectedYearIndex] : null;
+
+  if (!selectedYearData) {
+    return null;
+  }
+
+  const successfulYears = yearResults.filter((result): result is SiloWeatherData => result !== null);
+
+  if (successfulYears.length === 0) {
+    return selectedYearData;
+  }
+
+  const sums = successfulYears.reduce((acc, current) => {
+    acc.rainfall += current.rainfall;
+    acc.avgTemp += current.avgTemp;
+    acc.maxTemp += current.maxTemp;
+    acc.minTemp += current.minTemp;
+    acc.frostDays += current.frostDays;
+    acc.mpot += current.mpot;
+    return acc;
+  }, {
+    rainfall: 0,
+    avgTemp: 0,
+    maxTemp: 0,
+    minTemp: 0,
+    frostDays: 0,
+    mpot: 0
+  });
+
+  const yearsAveraged = successfulYears.length;
+  const fiveYearAverages: SiloFiveYearAverages = {
+    startYear,
+    endYear: selectedYear,
+    yearsAveraged,
+    rainfall: parseFloat((sums.rainfall / yearsAveraged).toFixed(1)),
+    avgTemp: parseFloat((sums.avgTemp / yearsAveraged).toFixed(1)),
+    maxTemp: parseFloat((sums.maxTemp / yearsAveraged).toFixed(1)),
+    minTemp: parseFloat((sums.minTemp / yearsAveraged).toFixed(1)),
+    frostDays: parseFloat((sums.frostDays / yearsAveraged).toFixed(1)),
+    mpot: parseFloat((sums.mpot / yearsAveraged).toFixed(1))
+  };
+
+  return {
+    ...selectedYearData,
+    fiveYearAverages
+  };
 }
 
 /**
