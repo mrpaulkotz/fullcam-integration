@@ -1,3 +1,5 @@
+import 'mapbox-gl/dist/mapbox-gl.css';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { polygon, featureCollection, point } from '@turf/helpers';
@@ -12,12 +14,55 @@ import {
   classifyClimate
 } from './weather';
 
-// Mapbox access token from environment variable
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+type LocationSelectionDetail = {
+  kind: 'point' | 'polygon';
+  latitude: number;
+  longitude: number;
+  state: string | null;
+  sa4Name: string | null;
+  elevation: number | null;
+  selectedYear: string;
+  weatherData: {
+    rainfall: number;
+    avgTemp: number;
+    maxTemp: number;
+    minTemp: number;
+    frostDays: number;
+    mpot: number;
+    fiveYearAverages?: {
+      startYear: number;
+      endYear: number;
+      rainfall: number;
+      avgTemp: number;
+      maxTemp: number;
+      minTemp: number;
+      frostDays: number;
+      mpot: number;
+    };
+  } | null;
+  nearestRainfallSite: {
+    stationName: string;
+    id: string;
+    distance: string;
+  } | null;
+  nearestMaxTempSite: {
+    stationName: string;
+    id: string;
+    distance: string;
+  } | null;
+  areaSquareMeters?: number;
+  areaHectares?: number;
+  geometry?: any;
+  summary: string;
+};
 
-if (!mapboxgl.accessToken) {
-  console.error('VITE_MAPBOX_ACCESS_TOKEN is not set. Please add it to your .env file.');
+function publishLocationSelection(detail: LocationSelectionDetail | null) {
+  window.dispatchEvent(new CustomEvent('fullcam-location-selected', { detail }));
 }
+
+// Mapbox access token from environment variable
+const mapboxAccessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+mapboxgl.accessToken = mapboxAccessToken;
 
 /**
  * Get elevation at a specific point using Mapbox Terrain-RGB tileset
@@ -74,12 +119,25 @@ async function getElevation(lng: number, lat: number): Promise<number | null> {
 }
 
 export function initializeMap(): mapboxgl.Map {
+  if (!mapboxAccessToken) {
+    const coordinates = document.getElementById('coordinates');
+    if (coordinates) {
+      coordinates.textContent = 'Mapbox access token is not set. Add VITE_MAPBOX_ACCESS_TOKEN to your .env file to enable the map.';
+    }
+
+    return {
+      remove() {},
+    } as unknown as mapboxgl.Map;
+  }
+
   const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
     center: [133.75953414518108, -25.806755647793132],
     zoom: 3
   });
+
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
   // Toggle between map styles
   let isSatellite = false;
@@ -358,6 +416,88 @@ export function initializeMap(): mapboxgl.Map {
 
         document.getElementById('coordinates')!.innerHTML =
           `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+
+        const pointSummaryLines = [
+          'Marker selected',
+          `Latitude: ${lat.toFixed(6)}`,
+          `Longitude: ${lng.toFixed(6)}`,
+          elevation !== null ? `Elevation: ${elevation} m` : null,
+          `State: ${state}`,
+          sa4Name
+            ? `SA4 Region: ${sa4Name}`
+            : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+          `SILO Weather Data (${selectedYear}):`,
+          weatherData
+            ? [
+                `Total annual rainfall: ${weatherData.rainfall} mm`,
+                `Average temperature: ${weatherData.avgTemp}°C`,
+                `Average maximum temperature: ${weatherData.maxTemp}°C`,
+                `Average minimum temperature: ${weatherData.minTemp}°C`,
+                `Frost days (min temp < 0°C): ${weatherData.frostDays}`,
+                `Total Morton potential ET: ${weatherData.mpot} mm`,
+                `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}`,
+                `Climate classification: ${classifyClimate(weatherData, elevation)}`,
+              ]
+            : [`Unable to fetch weather data for ${selectedYear}`],
+        ];
+
+        if (weatherData?.fiveYearAverages) {
+          const fiveYearAverages = weatherData.fiveYearAverages;
+          pointSummaryLines.push(
+            `Five-year historical averages (${fiveYearAverages.startYear}-${fiveYearAverages.endYear}):`,
+            `Rainfall: ${fiveYearAverages.rainfall} mm`,
+            `Average temperature: ${fiveYearAverages.avgTemp}°C`,
+            `Average maximum temperature: ${fiveYearAverages.maxTemp}°C`,
+            `Average minimum temperature: ${fiveYearAverages.minTemp}°C`,
+            `Frost days: ${fiveYearAverages.frostDays}`,
+            `Morton potential ET: ${fiveYearAverages.mpot} mm`,
+            `Rainfall/ET ratio: ${(fiveYearAverages.rainfall / fiveYearAverages.mpot).toFixed(2)}`,
+            `Climate classification: ${classifyClimate(fiveYearAverages, elevation)}`,
+          );
+        }
+
+        if (nearestRainfallSite) {
+          const props = nearestRainfallSite.properties;
+          pointSummaryLines.push(
+            'Nearest Rainfall Site:',
+            `Station: ${props.station_name || props.name || 'N/A'}`,
+            `ID: ${props.site || props.id || 'N/A'}`,
+            `Distance: ${nearestRainfallSite.distance} km`,
+          );
+        }
+
+        if (nearestMaxTempSite) {
+          const props = nearestMaxTempSite.properties;
+          pointSummaryLines.push(
+            'Nearest Max Temp Site:',
+            `Station: ${props.station_name || props.name || 'N/A'}`,
+            `ID: ${props.site || props.id || 'N/A'}`,
+            `Distance: ${nearestMaxTempSite.distance} km`,
+          );
+        }
+
+        publishLocationSelection({
+          kind: 'point',
+          latitude: lat,
+          longitude: lng,
+          state,
+          sa4Name,
+          elevation,
+          selectedYear,
+          weatherData,
+          nearestRainfallSite: nearestRainfallSite ? {
+            stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
+            id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
+            distance: nearestRainfallSite.distance,
+          } : null,
+          nearestMaxTempSite: nearestMaxTempSite ? {
+            stationName: nearestMaxTempSite.properties.station_name || nearestMaxTempSite.properties.name || 'N/A',
+            id: String(nearestMaxTempSite.properties.site || nearestMaxTempSite.properties.id || 'N/A'),
+            distance: nearestMaxTempSite.distance,
+          } : null,
+          geometry: feature.geometry,
+          summary: pointSummaryLines.filter(Boolean).join('\n'),
+        });
       }
       // Check if it's a polygon
       else if (feature.geometry.type === 'Polygon') {
@@ -433,12 +573,101 @@ export function initializeMap(): mapboxgl.Map {
 
         document.getElementById('coordinates')!.innerHTML =
           `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+
+        const polygonSummaryLines = [
+          'Polygon selected',
+          `Area: ${areaInHectares.toFixed(2)} hectares`,
+          `(${areaInSquareMeters.toFixed(2)} m²)`,
+          'Centroid:',
+          `Latitude: ${centroid.lat.toFixed(6)}`,
+          `Longitude: ${centroid.lng.toFixed(6)}`,
+          elevation !== null ? `Elevation (centroid): ${elevation} m` : null,
+          `State: ${state}`,
+          sa4Name
+            ? `SA4 Region: ${sa4Name}`
+            : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+          `SILO Weather Data (${selectedYear}):`,
+          weatherData
+            ? [
+                `Total annual rainfall: ${weatherData.rainfall} mm`,
+                `Average temperature: ${weatherData.avgTemp}°C`,
+                `Average maximum temperature: ${weatherData.maxTemp}°C`,
+                `Average minimum temperature: ${weatherData.minTemp}°C`,
+                `Frost days (min temp < 0°C): ${weatherData.frostDays}`,
+                `Total Morton potential ET: ${weatherData.mpot} mm`,
+                `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}`,
+                `Climate classification: ${classifyClimate(weatherData, elevation)}`,
+              ]
+            : [`Unable to fetch weather data for ${selectedYear}`],
+        ];
+
+        if (weatherData?.fiveYearAverages) {
+          const fiveYearAverages = weatherData.fiveYearAverages;
+          polygonSummaryLines.push(
+            `Five-year historical averages (${fiveYearAverages.startYear}-${fiveYearAverages.endYear}):`,
+            `Rainfall: ${fiveYearAverages.rainfall} mm`,
+            `Average temperature: ${fiveYearAverages.avgTemp}°C`,
+            `Average maximum temperature: ${fiveYearAverages.maxTemp}°C`,
+            `Average minimum temperature: ${fiveYearAverages.minTemp}°C`,
+            `Frost days: ${fiveYearAverages.frostDays}`,
+            `Morton potential ET: ${fiveYearAverages.mpot} mm`,
+            `Rainfall/ET ratio: ${(fiveYearAverages.rainfall / fiveYearAverages.mpot).toFixed(2)}`,
+            `Climate classification: ${classifyClimate(fiveYearAverages, elevation)}`,
+          );
+        }
+
+        if (nearestRainfallSite) {
+          const props = nearestRainfallSite.properties;
+          polygonSummaryLines.push(
+            'Nearest Rainfall Site:',
+            `Station: ${props.station_name || props.name || 'N/A'}`,
+            `ID: ${props.site || props.id || 'N/A'}`,
+            `Distance: ${nearestRainfallSite.distance} km`,
+          );
+        }
+
+        if (nearestMaxTempSite) {
+          const props = nearestMaxTempSite.properties;
+          polygonSummaryLines.push(
+            'Nearest Max Temp Site:',
+            `Station: ${props.station_name || props.name || 'N/A'}`,
+            `ID: ${props.site || props.id || 'N/A'}`,
+            `Distance: ${nearestMaxTempSite.distance} km`,
+          );
+        }
+
+        publishLocationSelection({
+          kind: 'polygon',
+          latitude: centroid.lat,
+          longitude: centroid.lng,
+          state,
+          sa4Name,
+          elevation,
+          selectedYear,
+          weatherData,
+          nearestRainfallSite: nearestRainfallSite ? {
+            stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
+            id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
+            distance: nearestRainfallSite.distance,
+          } : null,
+          nearestMaxTempSite: nearestMaxTempSite ? {
+            stationName: nearestMaxTempSite.properties.station_name || nearestMaxTempSite.properties.name || 'N/A',
+            id: String(nearestMaxTempSite.properties.site || nearestMaxTempSite.properties.id || 'N/A'),
+            distance: nearestMaxTempSite.distance,
+          } : null,
+          areaSquareMeters,
+          areaHectares,
+          geometry: feature.geometry,
+          summary: polygonSummaryLines.filter(Boolean).join('\n'),
+        });
       }
     } else if (data.features.length === 0) {
       document.getElementById('coordinates')!.innerHTML = 'Draw on the map';
+      publishLocationSelection(null);
     } else {
       document.getElementById('coordinates')!.innerHTML =
         `Features: ${data.features.length}<br>Select a feature to view details`;
+      publishLocationSelection(null);
     }
   }
 
