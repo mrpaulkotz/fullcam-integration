@@ -13,6 +13,7 @@ import {
   fetchSiloWeatherData,
   classifyClimate
 } from './weather';
+import type { SiloWeatherData } from './weather';
 
 type LocationSelectionDetail = {
   kind: 'point' | 'polygon';
@@ -22,24 +23,7 @@ type LocationSelectionDetail = {
   sa4Name: string | null;
   elevation: number | null;
   selectedYear: string;
-  weatherData: {
-    rainfall: number;
-    avgTemp: number;
-    maxTemp: number;
-    minTemp: number;
-    frostDays: number;
-    mpot: number;
-    fiveYearAverages?: {
-      startYear: number;
-      endYear: number;
-      rainfall: number;
-      avgTemp: number;
-      maxTemp: number;
-      minTemp: number;
-      frostDays: number;
-      mpot: number;
-    };
-  } | null;
+  weatherData: SiloWeatherData | null;
   nearestRainfallSite: {
     stationName: string;
     id: string;
