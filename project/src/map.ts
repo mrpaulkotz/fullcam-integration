@@ -655,8 +655,8 @@ export function initializeMap(): mapboxgl.Map {
             id: String(nearestMaxTempSite.properties.site || nearestMaxTempSite.properties.id || 'N/A'),
             distance: nearestMaxTempSite.distance,
           } : null,
-          areaSquareMeters,
-          areaHectares,
+          areaSquareMeters: areaInSquareMeters,
+          areaHectares: areaInHectares,
           geometry: feature.geometry,
           summary: polygonSummaryLines.filter(Boolean).join('\n'),
         });
