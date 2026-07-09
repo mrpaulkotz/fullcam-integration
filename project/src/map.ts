@@ -22,8 +22,8 @@ type LocationSelectionDetail = {
   state: string | null;
   sa4Name: string | null;
   elevation: number | null;
-  selectedYear: string;
-  weatherData: SiloWeatherData | null;
+  selectedYears: string[];
+  weatherDataByYear: { year: string; weatherData: SiloWeatherData | null }[];
   nearestRainfallSite: {
     stationName: string;
     id: string;
@@ -100,6 +100,79 @@ async function getElevation(lng: number, lat: number): Promise<number | null> {
     console.error('Error fetching elevation:', error);
     return null;
   }
+}
+
+/**
+ * Build the HTML block describing SILO weather data for a single year.
+ */
+function buildWeatherInfoHtml(year: string, weatherData: SiloWeatherData | null, elevation: number | null): string {
+  if (!weatherData) {
+    return `<br><br>Unable to fetch weather data for ${year}`;
+  }
+
+  const climateClass = classifyClimate(weatherData, elevation);
+  const climateClassFiveYearAverage = classifyClimate(weatherData.fiveYearAverages, elevation);
+  const fiveYearAverageInfo = weatherData.fiveYearAverages
+    ? `<br><br><strong>Five-year historical averages (${weatherData.fiveYearAverages.startYear}-${weatherData.fiveYearAverages.endYear}):</strong><br>` +
+      `Rainfall: ${weatherData.fiveYearAverages.rainfall} mm<br>` +
+      `Average temperature: ${weatherData.fiveYearAverages.avgTemp}°C<br>` +
+      `Average maximum temperature: ${weatherData.fiveYearAverages.maxTemp}°C<br>` +
+      `Average minimum temperature: ${weatherData.fiveYearAverages.minTemp}°C<br>` +
+      `Frost days: ${weatherData.fiveYearAverages.frostDays}<br>` +
+      `Morton potential ET: ${weatherData.fiveYearAverages.mpot} mm<br>` +
+      `Rainfall/ET ratio: ${(weatherData.fiveYearAverages.rainfall / weatherData.fiveYearAverages.mpot).toFixed(2)}<br>` +
+      `<strong>Climate classification: ${climateClassFiveYearAverage}</strong>`
+    : '';
+
+  return `<br><br><strong>SILO Weather Data (${year}):</strong><br>` +
+    `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
+    `Average temperature: ${weatherData.avgTemp}°C<br>` +
+    `Average maximum temperature: ${weatherData.maxTemp}°C<br>` +
+    `Average minimum temperature: ${weatherData.minTemp}°C<br>` +
+    `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
+    `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
+    `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
+    `<strong>Climate classification: ${climateClass}</strong>` +
+    fiveYearAverageInfo;
+}
+
+/**
+ * Build the plain-text summary lines describing SILO weather data for a single year.
+ */
+function buildWeatherSummaryLines(year: string, weatherData: SiloWeatherData | null, elevation: number | null): string[] {
+  const lines: string[] = [`SILO Weather Data (${year}):`];
+
+  if (weatherData) {
+    lines.push(
+      `Total annual rainfall: ${weatherData.rainfall} mm`,
+      `Average temperature: ${weatherData.avgTemp}°C`,
+      `Average maximum temperature: ${weatherData.maxTemp}°C`,
+      `Average minimum temperature: ${weatherData.minTemp}°C`,
+      `Frost days (min temp < 0°C): ${weatherData.frostDays}`,
+      `Total Morton potential ET: ${weatherData.mpot} mm`,
+      `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}`,
+      `Climate classification: ${classifyClimate(weatherData, elevation)}`,
+    );
+
+    if (weatherData.fiveYearAverages) {
+      const fiveYearAverages = weatherData.fiveYearAverages;
+      lines.push(
+        `Five-year historical averages (${fiveYearAverages.startYear}-${fiveYearAverages.endYear}):`,
+        `Rainfall: ${fiveYearAverages.rainfall} mm`,
+        `Average temperature: ${fiveYearAverages.avgTemp}°C`,
+        `Average maximum temperature: ${fiveYearAverages.maxTemp}°C`,
+        `Average minimum temperature: ${fiveYearAverages.minTemp}°C`,
+        `Frost days: ${fiveYearAverages.frostDays}`,
+        `Morton potential ET: ${fiveYearAverages.mpot} mm`,
+        `Rainfall/ET ratio: ${(fiveYearAverages.rainfall / fiveYearAverages.mpot).toFixed(2)}`,
+        `Climate classification: ${classifyClimate(fiveYearAverages, elevation)}`,
+      );
+    }
+  } else {
+    lines.push(`Unable to fetch weather data for ${year}`);
+  }
+
+  return lines;
 }
 
 export function initializeMap(): mapboxgl.Map {
@@ -323,7 +396,8 @@ export function initializeMap(): mapboxgl.Map {
   async function updateArea(e: any) {
     const data = draw.getAll();
     const selectedFeatures = e.features || [];
-    const selectedYear = (document.getElementById('year-select') as HTMLSelectElement).value;
+    const yearSelect = document.getElementById('year-select') as HTMLSelectElement;
+    const selectedYears = Array.from(yearSelect.selectedOptions).map((option) => option.value);
 
     if (selectedFeatures.length > 0) {
       const feature = selectedFeatures[0];
@@ -336,48 +410,27 @@ export function initializeMap(): mapboxgl.Map {
         document.getElementById('coordinates')!.innerHTML = 'Loading weather and elevation data...';
         
         const state = await getAustralianState(lng, lat);
-        const weatherData = await fetchSiloWeatherData(lat, lng, selectedYear);
+        const weatherDataByYear = await Promise.all(
+          selectedYears.map(async (year) => ({
+            year,
+            weatherData: await fetchSiloWeatherData(lat, lng, year),
+          })),
+        );
         const elevation = await getElevation(lng, lat);
         const nearestRainfallSite = getNearestRainfallSite(map, lng, lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, lng, lat);
         const sa4Name = getSA4Name(lng, lat);
 
-        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherData, sa4Name });
+        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherDataByYear, sa4Name });
 
         let elevationInfo = '';
         if (elevation !== null) {
           elevationInfo = `<br>Elevation: ${elevation} m`;
         }
 
-        let weatherInfo = '';
-        if (weatherData) {
-          const climateClass = classifyClimate(weatherData, elevation);
-          const climateClassFiveYearAverage = classifyClimate(weatherData.fiveYearAverages, elevation);
-          const fiveYearAverageInfo = weatherData.fiveYearAverages
-            ? `<br><br><strong>Five-year historical averages (${weatherData.fiveYearAverages.startYear}-${weatherData.fiveYearAverages.endYear}):</strong><br>` +
-              `Rainfall: ${weatherData.fiveYearAverages.rainfall} mm<br>` +
-              `Average temperature: ${weatherData.fiveYearAverages.avgTemp}°C<br>` +
-              `Average maximum temperature: ${weatherData.fiveYearAverages.maxTemp}°C<br>` +
-              `Average minimum temperature: ${weatherData.fiveYearAverages.minTemp}°C<br>` +
-              `Frost days: ${weatherData.fiveYearAverages.frostDays}<br>` +
-              `Morton potential ET: ${weatherData.fiveYearAverages.mpot} mm<br>` +
-              `Rainfall/ET ratio: ${(weatherData.fiveYearAverages.rainfall / weatherData.fiveYearAverages.mpot).toFixed(2)}<br>` +
-              `<strong>Climate classification: ${climateClassFiveYearAverage}</strong>`
-            : '';
-
-          weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
-            `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
-            `Average temperature: ${weatherData.avgTemp}°C<br>` +
-            `Average maximum temperature: ${weatherData.maxTemp}°C<br>` +
-            `Average minimum temperature: ${weatherData.minTemp}°C<br>` +
-            `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
-            `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
-            `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
-            `<strong>Climate classification: ${climateClass}</strong>` +
-            fiveYearAverageInfo;
-        } else {
-          weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
-        }
+        const weatherInfo = weatherDataByYear
+          .map(({ year, weatherData }) => buildWeatherInfoHtml(year, weatherData, elevation))
+          .join('');
 
         let RainfallSiteInfo = '';
         if (nearestRainfallSite) {
@@ -401,7 +454,7 @@ export function initializeMap(): mapboxgl.Map {
         document.getElementById('coordinates')!.innerHTML =
           `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
 
-        const pointSummaryLines = [
+        const pointSummaryLines: (string | null)[] = [
           'Marker selected',
           `Latitude: ${lat.toFixed(6)}`,
           `Longitude: ${lng.toFixed(6)}`,
@@ -410,35 +463,10 @@ export function initializeMap(): mapboxgl.Map {
           sa4Name
             ? `SA4 Region: ${sa4Name}`
             : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
-          `SILO Weather Data (${selectedYear}):`,
-          weatherData
-            ? [
-                `Total annual rainfall: ${weatherData.rainfall} mm`,
-                `Average temperature: ${weatherData.avgTemp}°C`,
-                `Average maximum temperature: ${weatherData.maxTemp}°C`,
-                `Average minimum temperature: ${weatherData.minTemp}°C`,
-                `Frost days (min temp < 0°C): ${weatherData.frostDays}`,
-                `Total Morton potential ET: ${weatherData.mpot} mm`,
-                `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}`,
-                `Climate classification: ${classifyClimate(weatherData, elevation)}`,
-              ]
-            : [`Unable to fetch weather data for ${selectedYear}`],
+          ...weatherDataByYear.flatMap(({ year, weatherData }) =>
+            buildWeatherSummaryLines(year, weatherData, elevation),
+          ),
         ];
-
-        if (weatherData?.fiveYearAverages) {
-          const fiveYearAverages = weatherData.fiveYearAverages;
-          pointSummaryLines.push(
-            `Five-year historical averages (${fiveYearAverages.startYear}-${fiveYearAverages.endYear}):`,
-            `Rainfall: ${fiveYearAverages.rainfall} mm`,
-            `Average temperature: ${fiveYearAverages.avgTemp}°C`,
-            `Average maximum temperature: ${fiveYearAverages.maxTemp}°C`,
-            `Average minimum temperature: ${fiveYearAverages.minTemp}°C`,
-            `Frost days: ${fiveYearAverages.frostDays}`,
-            `Morton potential ET: ${fiveYearAverages.mpot} mm`,
-            `Rainfall/ET ratio: ${(fiveYearAverages.rainfall / fiveYearAverages.mpot).toFixed(2)}`,
-            `Climate classification: ${classifyClimate(fiveYearAverages, elevation)}`,
-          );
-        }
 
         if (nearestRainfallSite) {
           const props = nearestRainfallSite.properties;
@@ -467,8 +495,8 @@ export function initializeMap(): mapboxgl.Map {
           state,
           sa4Name,
           elevation,
-          selectedYear,
-          weatherData,
+          selectedYears,
+          weatherDataByYear,
           nearestRainfallSite: nearestRainfallSite ? {
             stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
             id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
@@ -493,48 +521,27 @@ export function initializeMap(): mapboxgl.Map {
         document.getElementById('coordinates')!.innerHTML = 'Calculating polygon data...';
         
         const state = await getAustralianState(centroid.lng, centroid.lat);
-        const weatherData = await fetchSiloWeatherData(centroid.lat, centroid.lng, selectedYear);
+        const weatherDataByYear = await Promise.all(
+          selectedYears.map(async (year) => ({
+            year,
+            weatherData: await fetchSiloWeatherData(centroid.lat, centroid.lng, year),
+          })),
+        );
         const elevation = await getElevation(centroid.lng, centroid.lat);
         const nearestRainfallSite = getNearestRainfallSite(map, centroid.lng, centroid.lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, centroid.lng, centroid.lat);
         const sa4Name = getSA4Name(centroid.lng, centroid.lat);
 
-        console.log('Polygon centroid:', { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherData, sa4Name });
+        console.log('Polygon centroid:', { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherDataByYear, sa4Name });
 
         let elevationInfo = '';
         if (elevation !== null) {
           elevationInfo = `<br>Elevation (centroid): ${elevation} m`;
         }
 
-        let weatherInfo = '';
-        if (weatherData) {
-          const climateClass = classifyClimate(weatherData, elevation);
-          const climateClassFiveYearAverage = classifyClimate(weatherData.fiveYearAverages, elevation);
-          const fiveYearAverageInfo = weatherData.fiveYearAverages
-            ? `<br><br><strong>Five-year historical averages (${weatherData.fiveYearAverages.startYear}-${weatherData.fiveYearAverages.endYear}):</strong><br>` +
-              `Rainfall: ${weatherData.fiveYearAverages.rainfall} mm<br>` +
-              `Average temperature: ${weatherData.fiveYearAverages.avgTemp}°C<br>` +
-              `Average maximum temperature: ${weatherData.fiveYearAverages.maxTemp}°C<br>` +
-              `Average minimum temperature: ${weatherData.fiveYearAverages.minTemp}°C<br>` +
-              `Frost days: ${weatherData.fiveYearAverages.frostDays}<br>` +
-              `Morton potential ET: ${weatherData.fiveYearAverages.mpot} mm<br>` +
-              `Rainfall/ET ratio: ${(weatherData.fiveYearAverages.rainfall / weatherData.fiveYearAverages.mpot).toFixed(2)}<br>` +
-              `<strong>Climate classification: ${climateClassFiveYearAverage}</strong>`
-            : '';
-
-          weatherInfo = `<br><br><strong>SILO Weather Data (${selectedYear}):</strong><br>` +
-            `Total annual rainfall: ${weatherData.rainfall} mm<br>` +
-            `Average temperature: ${weatherData.avgTemp}°C<br>` +
-            `Average maximum temperature: ${weatherData.maxTemp}°C<br>` +
-            `Average minimum temperature: ${weatherData.minTemp}°C<br>` +
-            `Frost days (min temp < 0°C): ${weatherData.frostDays}<br>` +
-            `Total Morton potential ET: ${weatherData.mpot} mm<br>` +
-            `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}<br>` +
-            `<strong>Climate classification: ${climateClass}</strong>` +
-            fiveYearAverageInfo;
-        } else {
-          weatherInfo = `<br><br>Unable to fetch weather data for ${selectedYear}`;
-        }
+        const weatherInfo = weatherDataByYear
+          .map(({ year, weatherData }) => buildWeatherInfoHtml(year, weatherData, elevation))
+          .join('');
 
         let RainfallSiteInfo = '';
         if (nearestRainfallSite) {
@@ -558,7 +565,7 @@ export function initializeMap(): mapboxgl.Map {
         document.getElementById('coordinates')!.innerHTML =
           `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
 
-        const polygonSummaryLines = [
+        const polygonSummaryLines: (string | null)[] = [
           'Polygon selected',
           `Area: ${areaInHectares.toFixed(2)} hectares`,
           `(${areaInSquareMeters.toFixed(2)} m²)`,
@@ -570,35 +577,10 @@ export function initializeMap(): mapboxgl.Map {
           sa4Name
             ? `SA4 Region: ${sa4Name}`
             : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
-          `SILO Weather Data (${selectedYear}):`,
-          weatherData
-            ? [
-                `Total annual rainfall: ${weatherData.rainfall} mm`,
-                `Average temperature: ${weatherData.avgTemp}°C`,
-                `Average maximum temperature: ${weatherData.maxTemp}°C`,
-                `Average minimum temperature: ${weatherData.minTemp}°C`,
-                `Frost days (min temp < 0°C): ${weatherData.frostDays}`,
-                `Total Morton potential ET: ${weatherData.mpot} mm`,
-                `Rainfall/ET ratio: ${(weatherData.rainfall / weatherData.mpot).toFixed(2)}`,
-                `Climate classification: ${classifyClimate(weatherData, elevation)}`,
-              ]
-            : [`Unable to fetch weather data for ${selectedYear}`],
+          ...weatherDataByYear.flatMap(({ year, weatherData }) =>
+            buildWeatherSummaryLines(year, weatherData, elevation),
+          ),
         ];
-
-        if (weatherData?.fiveYearAverages) {
-          const fiveYearAverages = weatherData.fiveYearAverages;
-          polygonSummaryLines.push(
-            `Five-year historical averages (${fiveYearAverages.startYear}-${fiveYearAverages.endYear}):`,
-            `Rainfall: ${fiveYearAverages.rainfall} mm`,
-            `Average temperature: ${fiveYearAverages.avgTemp}°C`,
-            `Average maximum temperature: ${fiveYearAverages.maxTemp}°C`,
-            `Average minimum temperature: ${fiveYearAverages.minTemp}°C`,
-            `Frost days: ${fiveYearAverages.frostDays}`,
-            `Morton potential ET: ${fiveYearAverages.mpot} mm`,
-            `Rainfall/ET ratio: ${(fiveYearAverages.rainfall / fiveYearAverages.mpot).toFixed(2)}`,
-            `Climate classification: ${classifyClimate(fiveYearAverages, elevation)}`,
-          );
-        }
 
         if (nearestRainfallSite) {
           const props = nearestRainfallSite.properties;
@@ -627,8 +609,8 @@ export function initializeMap(): mapboxgl.Map {
           state,
           sa4Name,
           elevation,
-          selectedYear,
-          weatherData,
+          selectedYears,
+          weatherDataByYear,
           nearestRainfallSite: nearestRainfallSite ? {
             stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
             id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
