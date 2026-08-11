@@ -59,45 +59,130 @@ function publishLocationSelection(detail: LocationSelectionDetail | null) {
 const mapboxAccessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
 mapboxgl.accessToken = mapboxAccessToken;
 
-// Geoscape Maps API - used for the cadastre (land parcel) layer
-const geoscapeApiKey = import.meta.env.VITE_GEOSCAPE_API_KEY || '';
-const GEOSCAPE_API_BASE_URL = 'https://api.psma.com.au/v1/maps/geoscape_v1/';
+// Free, keyless state-government cadastral parcel services used for click-to-select parcels.
+// Each state's Esri REST service uses different field names for its parcel identifier, and
+// only MapServer-backed services (not FeatureServer) support the /export raster endpoint used
+// for the "always visible" background boundary layer - VIC's is FeatureServer-only, so it has
+// no rasterExportUrl and only participates in click-to-select, not the background layer.
+type CadastreStateConfig = {
+  name: string;
+  queryUrl: string;
+  outFields: string;
+  idField: string;
+  /** The service's true unique row id field (Esri OID) - used as the selection key, since
+   * idField can be null/non-unique for non-lot features (easements, roads, etc). */
+  objectIdField: string;
+  rasterExportUrl?: string;
+};
 
-// Queensland's public cadastral parcels service (free, no API key) - used for click-to-select parcels
-const QLD_CADASTRE_MAPSERVER_URL = 'https://spatial-gis.information.qld.gov.au/arcgis/rest/services/PlanningCadastre/LandParcelPropertyFramework/MapServer';
-const QLD_CADASTRE_QUERY_URL = `${QLD_CADASTRE_MAPSERVER_URL}/4/query`;
-// Esri dynamic map services aren't pre-cached into {z}/{x}/{y} tiles; Mapbox GL's raster
-// sources support the {bbox-epsg-3857} template specifically for this case.
-const QLD_CADASTRE_RASTER_TILE_URL =
-  `${QLD_CADASTRE_MAPSERVER_URL}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:4&format=png32&transparent=true&f=image`;
+const CADASTRE_STATE_CONFIGS: CadastreStateConfig[] = [
+  {
+    name: 'QLD',
+    queryUrl: 'https://spatial-gis.information.qld.gov.au/arcgis/rest/services/PlanningCadastre/LandParcelPropertyFramework/MapServer/4/query',
+    outFields: 'objectid,lot,plan,lotplan,lot_area,locality,shire_name',
+    idField: 'lotplan',
+    objectIdField: 'objectid',
+    rasterExportUrl:
+      'https://spatial-gis.information.qld.gov.au/arcgis/rest/services/PlanningCadastre/LandParcelPropertyFramework/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:4&format=png32&transparent=true&f=image',
+  },
+  {
+    name: 'NSW',
+    queryUrl: 'https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Cadastre/MapServer/9/query',
+    outFields: 'objectid,lotidstring,lotnumber,planlabel,planlotarea',
+    idField: 'lotidstring',
+    objectIdField: 'objectid',
+    rasterExportUrl:
+      'https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Cadastre/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:9&format=png32&transparent=true&f=image',
+  },
+  {
+    name: 'VIC',
+    queryUrl: 'https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Parcel/FeatureServer/0/query',
+    outFields: 'OBJECTID,parcel_spi,parcel_lot_number,parcel_plan_number,Shape__Area',
+    idField: 'parcel_spi',
+    objectIdField: 'OBJECTID',
+    // FeatureServer-only - no /export raster endpoint, so no background layer for VIC
+  },
+  {
+    name: 'TAS',
+    queryUrl: 'https://services.thelist.tas.gov.au/arcgis/rest/services/Public/CadastreParcels/MapServer/0/query',
+    outFields: 'OBJECTID,PID,VOLUME,FOLIO,MEAS_AREA,PROP_NAME',
+    idField: 'PID',
+    objectIdField: 'OBJECTID',
+    rasterExportUrl:
+      'https://services.thelist.tas.gov.au/arcgis/rest/services/Public/CadastreParcels/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:0&format=png32&transparent=true&f=image',
+  },
+];
+
+// QLD's own cadastre layer enforces minScale: 1,000,000 server-side (~zoom 9.2); used as the
+// client-side minzoom for all cadastre background layers so parcels only render once legible.
+const CADASTRE_PARCEL_MIN_ZOOM = 10;
 
 /**
- * Query the QLD cadastre service for the parcel containing a point.
- * @returns The parcel feature (with lot/plan/lotplan/lot_area/locality/shire_name properties), or null if none found.
+ * Query a state cadastre service for the parcel containing a point.
+ * @returns The parcel feature tagged with which state config matched, or null if none found.
  */
-async function fetchQldParcelAtPoint(lng: number, lat: number): Promise<Feature<Polygon | MultiPolygon> | null> {
+async function fetchParcelAtPoint(
+  config: CadastreStateConfig,
+  lng: number,
+  lat: number,
+): Promise<Feature<Polygon | MultiPolygon> | null> {
   const params = new URLSearchParams({
     geometry: `${lng},${lat}`,
     geometryType: 'esriGeometryPoint',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'lot,plan,lotplan,lot_area,locality,shire_name',
+    outFields: config.outFields,
     outSR: '4326',
     f: 'geojson',
   });
 
   try {
-    const response = await fetch(`${QLD_CADASTRE_QUERY_URL}?${params.toString()}`);
+    const response = await fetch(`${config.queryUrl}?${params.toString()}`);
     if (!response.ok) {
-      console.error('Failed to query QLD cadastre parcel:', response.status);
+      console.error(`Failed to query ${config.name} cadastre parcel:`, response.status);
       return null;
     }
     const data = await response.json();
-    return data.features?.[0] ?? null;
+    const feature = data.features?.[0];
+    if (!feature) return null;
+    return { ...feature, properties: { ...feature.properties, __cadastreState: config.name } };
   } catch (error) {
-    console.error('Error querying QLD cadastre parcel:', error);
+    console.error(`Error querying ${config.name} cadastre parcel:`, error);
     return null;
   }
+}
+
+/**
+ * Query all configured state cadastre services in parallel for the parcel at a point.
+ * At most one state's service should ever return a match for a given point.
+ */
+async function fetchParcelAtPointAnyState(lng: number, lat: number): Promise<Feature<Polygon | MultiPolygon> | null> {
+  const results = await Promise.all(
+    CADASTRE_STATE_CONFIGS.map((config) => fetchParcelAtPoint(config, lng, lat)),
+  );
+  return results.find((result): result is Feature<Polygon | MultiPolygon> => result !== null) ?? null;
+}
+
+/** Build a human-readable, state-prefixed parcel identifier for display purposes only. */
+function getParcelDisplayId(parcel: Feature<Polygon | MultiPolygon>): string {
+  const stateName = parcel.properties?.__cadastreState as string | undefined;
+  const config = CADASTRE_STATE_CONFIGS.find((c) => c.name === stateName);
+  const idValue = config ? parcel.properties?.[config.idField] : undefined;
+  return `${stateName ?? '?'} ${idValue ?? 'unknown parcel'}`;
+}
+
+/**
+ * Build the selection/dedup key for a parcel, using each service's guaranteed-unique Esri
+ * object id rather than the lot/plan display field - that field can be null or ambiguous for
+ * non-lot features (easements, roads), which previously caused unrelated parcels to collide
+ * and wrongly deselect each other.
+ */
+function getParcelKey(parcel: Feature<Polygon | MultiPolygon>): string | null {
+  const stateName = parcel.properties?.__cadastreState as string | undefined;
+  const config = CADASTRE_STATE_CONFIGS.find((c) => c.name === stateName);
+  const objectId = config ? parcel.properties?.[config.objectIdField] : undefined;
+  if (objectId === undefined || objectId === null) return null;
+  return `${stateName}:${objectId}`;
 }
 
 /**
@@ -244,12 +329,6 @@ export function initializeMap(): mapboxgl.Map {
     style: 'mapbox://styles/mapbox/streets-v12',
     center: [133.75953414518108, -25.806755647793132],
     zoom: 3,
-    transformRequest: (url, resourceType) => {
-      if ((resourceType === 'Source' || resourceType === 'Tile') && url.startsWith(GEOSCAPE_API_BASE_URL)) {
-        return { url, headers: { Authorization: geoscapeApiKey } };
-      }
-      return { url };
-    },
   });
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -333,32 +412,24 @@ export function initializeMap(): mapboxgl.Map {
       }
     });
 
-    map.addSource('geoscape-cadastre', {
-      type: 'vector',
-      tiles: [`${GEOSCAPE_API_BASE_URL}cadastre/{z}/{x}/{y}.pbf`],
-    });
-    map.addLayer({
-      'id': 'geoscape-cadastre-layer',
-      'type': 'line',
-      'source': 'geoscape-cadastre',
-      'source-layer': 'cadastre',
-      'paint': {
-        'line-color': '#54365a',
-        'line-width': 1
-      }
-    });
-
-    // All QLD cadastral parcel boundaries, always visible (raster export from Esri's dynamic
-    // map service - there's no pre-cached vector tileset available for free)
-    map.addSource('qld-cadastre', {
-      type: 'raster',
-      tiles: [QLD_CADASTRE_RASTER_TILE_URL],
-      tileSize: 256,
-    });
-    map.addLayer({
-      'id': 'qld-cadastre-layer',
-      'type': 'raster',
-      'source': 'qld-cadastre',
+    // All cadastral parcel boundaries, for each state whose service supports raster export
+    // (VIC is FeatureServer-only and has no background layer - see config above). QLD's own
+    // service enforces minScale: 1,000,000 server-side (~zoom 9.2) - matched here as a client-side
+    // minzoom, applied uniformly, so tiles aren't even requested until parcels are legible.
+    CADASTRE_STATE_CONFIGS.forEach((config) => {
+      if (!config.rasterExportUrl) return;
+      const sourceId = `cadastre-${config.name.toLowerCase()}`;
+      map.addSource(sourceId, {
+        type: 'raster',
+        tiles: [config.rasterExportUrl!],
+        tileSize: 256,
+        minzoom: CADASTRE_PARCEL_MIN_ZOOM,
+      });
+      map.addLayer({
+        'id': `${sourceId}-layer`,
+        'type': 'raster',
+        'source': sourceId,
+      });
     });
 
     // Highlight layer for parcels selected via click-to-select
@@ -411,7 +482,7 @@ export function initializeMap(): mapboxgl.Map {
       return;
     }
     const totalAreaHectares = turfArea(featureCollection([...selectedParcels.values()]) as any) / 10000;
-    const lotPlans = [...selectedParcels.keys()];
+    const lotPlans = [...selectedParcels.values()].map(getParcelDisplayId);
     parcelSelectionStatus.textContent =
       `${selectedParcels.size} parcel${selectedParcels.size > 1 ? 's' : ''} selected (${lotPlans.join(', ')}) - ${totalAreaHectares.toFixed(2)} ha total. Click "Use this boundary" to continue.`;
     useParcelSelectionBtn.style.display = '';
@@ -439,7 +510,7 @@ export function initializeMap(): mapboxgl.Map {
   map.on('click', async (e) => {
     if (!isSelectingParcels) return;
 
-    const parcel = await fetchQldParcelAtPoint(e.lngLat.lng, e.lngLat.lat);
+    const parcel = await fetchParcelAtPointAnyState(e.lngLat.lng, e.lngLat.lat);
     if (!parcel) {
       if (selectedParcels.size === 0) {
         parcelSelectionStatus.textContent = 'No cadastral parcel found at that location';
@@ -447,7 +518,11 @@ export function initializeMap(): mapboxgl.Map {
       return;
     }
 
-    const key = (parcel.properties?.lotplan as string | undefined) ?? String(parcel.properties?.objectid ?? `${e.lngLat.lng},${e.lngLat.lat}`);
+    const key = getParcelKey(parcel);
+    if (!key) {
+      console.error('Parcel has no object id, cannot select it:', parcel);
+      return;
+    }
     if (selectedParcels.has(key)) {
       selectedParcels.delete(key);
     } else {
@@ -466,7 +541,7 @@ export function initializeMap(): mapboxgl.Map {
       null,
     );
     if (merged) {
-      await runAreaLookup('parcels', merged.geometry, [...selectedParcels.keys()]);
+      await runAreaLookup('parcels', merged.geometry, features.map(getParcelDisplayId));
     }
   });
 
