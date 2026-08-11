@@ -186,6 +186,7 @@ window.addEventListener('fullcam-location-selected', (e: CustomEvent<LocationSel
 |---|---|---|
 | `kind` | `'point' \| 'polygon' \| 'parcels'` | What kind of selection this is. |
 | `latitude`, `longitude` | `number` | The point's coordinates, or the polygon/parcels' centroid. |
+| `mapView` | `{ center: [lng, lat]; zoom: number }` | The map's pan/zoom at the moment of this selection. Save this alongside the geometry/parcelKeys and pass it back as `SavedLocationSelection.mapView` so the map opens at the same view instead of the default Australia-wide zoom. |
 | `geometry` | GeoJSON `Point \| Polygon \| MultiPolygon` | The actual shape. Present for all kinds, but you only need to save it for `point`/`polygon` — see below. |
 | `state` | `string \| null` | Australian state/territory name. |
 | `sa4Name`, `sa2Name` | `string \| null` | ABS SA4/SA2 region names, if the boundary tileset has loaded at the current zoom. |
@@ -213,14 +214,16 @@ window.addEventListener('fullcam-location-selected', (e: CustomEvent<LocationSel
 
   const toSave =
     detail.kind === 'parcels'
-      ? { kind: 'parcels' as const, parcelKeys: detail.parcelKeys ?? [] }
-      : { kind: detail.kind, geometry: detail.geometry };
+      ? { kind: 'parcels' as const, parcelKeys: detail.parcelKeys ?? [], mapView: detail.mapView }
+      : { kind: detail.kind, geometry: detail.geometry, mapView: detail.mapView };
 
   localStorage.setItem('mapSelection', JSON.stringify(toSave));
 });
 ```
 
 (`localStorage` is just an example — save it however your app persists state: a database, a query param, etc.)
+
+`mapView` is optional on `SavedLocationSelection` — you can leave it out if you only care about restoring the selection itself and are fine with the map picking its own default view.
 
 ### 3. Restoring a selection
 
@@ -239,25 +242,30 @@ initializeMap(savedSelection);
 `SavedLocationSelection` is a discriminated union matching what you saved above:
 
 ```ts
-type SavedLocationSelection =
+type SavedLocationSelection = (
   | { kind: 'point'; geometry: Point }      // GeoJSON Point
   | { kind: 'polygon'; geometry: Polygon }  // GeoJSON Polygon
-  | { kind: 'parcels'; parcelKeys: string[] };
+  | { kind: 'parcels'; parcelKeys: string[] }
+) & {
+  mapView?: { center: [number, number]; zoom: number }; // optional
+};
 ```
 
 The `initializeMap()` parameter is optional — omitting it (or passing `undefined`) behaves exactly as before, so this is a non-breaking addition if you're already calling `initializeMap()`.
 
 ### What happens on restore
 
-- **`point`/`polygon`**: the saved geometry is added as a drawn feature (same as if the user had just drawn it) and the full lookup pipeline reruns immediately — marker/polygon appears, info panel populates, and a fresh `fullcam-location-selected` event fires with up-to-date data.
+- **`mapView`**: if provided, the map's *initial* camera (center/zoom) is set to it directly when the map is constructed — there's no default-view flash followed by a jump, it opens exactly where it left off. If omitted, the map falls back to its default Australia-wide view (as it always did).
+- **`point`/`polygon`**: the saved geometry is added as a drawn feature (same as if the user had just drawn it) and the full lookup pipeline reruns immediately — marker/polygon appears, info panel populates, and a fresh `fullcam-location-selected` event fires with up-to-date data (including a fresh `mapView` matching wherever the map ended up).
 - **`parcels`**: each saved parcel is re-fetched individually from its state's cadastre service by object id, so the restored selection is **fully editable** — the user can immediately click to add or remove parcels from it, exactly like a fresh selection. If a saved parcel key no longer resolves (e.g. the parcel was deleted/renumbered by the state authority since you saved it), it's skipped silently (logged to the console) rather than breaking the rest of the restore.
-- Restoring happens once, shortly after the map's initial style finishes loading — there's a brief delay (network round-trips to re-fetch weather/elevation/cadastre data) before the info panel and, for parcels, the highlighted shapes appear.
+- Restoring the selection (as opposed to the view, which is instant) happens once, shortly after the map's initial style finishes loading — there's a brief delay (network round-trips to re-fetch weather/elevation/cadastre data) before the info panel and, for parcels, the highlighted shapes appear.
 
 ### Things to watch out for
 
 - **Only pass `parcelKeys`, never `parcelIds`**, when restoring a parcel selection — `parcelIds` are for display and aren't guaranteed to round-trip correctly.
-- **`initialSelection` is a one-shot restore on init**, not a live prop — calling `initializeMap()` again with different data won't update an already-running map. If your app needs to load a *different* saved selection into an already-open map, tear down and re-`initializeMap()`.
+- **`initialSelection` (including `mapView`) is a one-shot restore on init**, not a live prop — calling `initializeMap()` again with different data won't update an already-running map, and there's no separate API to update just the camera later. If your app needs to load different saved data into an already-open map, tear down and re-`initializeMap()`.
 - **A restored selection always re-fetches fresh data.** This map does no caching of weather/SA2/elevation results, by design (per the save/restore approach agreed above) — so treat every restore as a live lookup, not an instant replay of exactly what was previously shown.
+- **`mapView.center` is `[lng, lat]`** (Mapbox's convention), not `[lat, lng]` — easy to transpose by mistake if you're used to other mapping libraries.
 
 ## Configuration
 

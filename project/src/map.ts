@@ -23,10 +23,19 @@ import {
 import type { SiloWeatherData } from './weather';
 import cattleRegBySa2Code from './data/cattle-reg-by-sa2.json';
 
+/** The map's camera position - center (lng/lat) and zoom - at the time a selection was made. */
+export type MapView = {
+  center: [number, number];
+  zoom: number;
+};
+
 export type LocationSelectionDetail = {
   kind: 'point' | 'polygon' | 'parcels';
   latitude: number;
   longitude: number;
+  /** The map's pan/zoom at the moment of this selection - save alongside geometry/parcelKeys
+   * and pass back via SavedLocationSelection.mapView to restore the same view on reload. */
+  mapView: MapView;
   state: string | null;
   sa4Name: string | null;
   sa2Name: string | null;
@@ -57,10 +66,15 @@ export type LocationSelectionDetail = {
 /** A previously-saved selection (from a LocationSelectionDetail this map published earlier)
  * to restore on init - pass to initializeMap(). Host apps have no other way to persist a
  * selection across page loads, since this map keeps no storage of its own. */
-export type SavedLocationSelection =
+export type SavedLocationSelection = (
   | { kind: 'point'; geometry: Point }
   | { kind: 'polygon'; geometry: Polygon }
-  | { kind: 'parcels'; parcelKeys: string[] };
+  | { kind: 'parcels'; parcelKeys: string[] }
+) & {
+  /** Optional - if provided (e.g. from a previous LocationSelectionDetail.mapView), the map
+   * starts at this pan/zoom instead of the default Australia-wide view. */
+  mapView?: MapView;
+};
 
 function publishLocationSelection(detail: LocationSelectionDetail | null) {
   window.dispatchEvent(new CustomEvent('fullcam-location-selected', { detail }));
@@ -376,11 +390,16 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
   const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
-    center: [133.75953414518108, -25.806755647793132],
-    zoom: 3,
+    center: initialSelection?.mapView?.center ?? [133.75953414518108, -25.806755647793132],
+    zoom: initialSelection?.mapView?.zoom ?? 3,
   });
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+  function getMapView(): MapView {
+    const center = map.getCenter();
+    return { center: [center.lng, center.lat], zoom: map.getZoom() };
+  }
 
   // Toggle between map styles
   let isSatellite = false;
@@ -868,6 +887,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       kind,
       latitude: centroid.lat,
       longitude: centroid.lng,
+      mapView: getMapView(),
       state,
       sa4Name,
       sa2Name,
@@ -1009,6 +1029,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
           kind: 'point',
           latitude: lat,
           longitude: lng,
+          mapView: getMapView(),
           state,
           sa4Name,
           sa2Name,
