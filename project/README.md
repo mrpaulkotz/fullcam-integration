@@ -151,6 +151,114 @@ amplify publish
    - Nearest max temperature monitoring station with temperature data
 4. Toggle between street and satellite views using the button
 
+## Host App Integration
+
+This map keeps no storage of its own. If another web app embeds this map in the same window/page (i.e. calls `initializeMap()` directly, not via an iframe), it's responsible for:
+
+1. Listening for the `fullcam-location-selected` event and saving whatever it needs from it.
+2. Passing that saved data back into `initializeMap()` on the next page load, so the map re-renders the same point, polygon, or parcel selection and re-runs its full lookup pipeline (weather, elevation, state, SA4/SA2 region, `Cattle_Reg`).
+
+Both `initializeMap` and the types below are exported from `src/map.ts`.
+
+### 1. Listening for selections
+
+Every time the user drops a point, finishes drawing a polygon, or clicks "Use this boundary" after selecting cadastral parcels, the map dispatches a `CustomEvent` on `window`:
+
+```ts
+import type { LocationSelectionDetail } from './map'; // or wherever map.ts is imported from
+
+window.addEventListener('fullcam-location-selected', (e: CustomEvent<LocationSelectionDetail | null>) => {
+  const detail = e.detail;
+  if (!detail) {
+    // User cleared their selection (deleted the drawn feature / deselected all parcels).
+    // Clear whatever you saved for this map.
+    return;
+  }
+  // ... save what you need, see below
+});
+```
+
+`detail` is `null` when the selection is cleared (all drawn features deleted, or parcel selection emptied) — always handle this case, not just the populated one.
+
+#### `LocationSelectionDetail` field reference
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | `'point' \| 'polygon' \| 'parcels'` | What kind of selection this is. |
+| `latitude`, `longitude` | `number` | The point's coordinates, or the polygon/parcels' centroid. |
+| `geometry` | GeoJSON `Point \| Polygon \| MultiPolygon` | The actual shape. Present for all kinds, but you only need to save it for `point`/`polygon` — see below. |
+| `state` | `string \| null` | Australian state/territory name. |
+| `sa4Name`, `sa2Name` | `string \| null` | ABS SA4/SA2 region names, if the boundary tileset has loaded at the current zoom. |
+| `cattleReg` | `string \| null` | Cattle disease-risk region classification, if available for that SA2. |
+| `parcelIds` | `string[]` (optional) | **Display-only** human-readable parcel labels, e.g. `"QLD 3RP91637"`. Only present for `kind: 'parcels'`. Don't use these to restore a selection — they aren't guaranteed unique/stable. |
+| `parcelKeys` | `string[]` (optional) | **Stable** `"STATE:objectid"` identifiers for each selected parcel, e.g. `"QLD:2192036"`. Only present for `kind: 'parcels'`. **This is what you save to restore a parcel selection.** |
+| `elevation` | `number \| null` | Metres, from Mapbox terrain data. |
+| `selectedYears` | `string[]` | Which years were selected in the year picker when this lookup ran. |
+| `weatherDataByYear` | `{ year: string; weatherData: SiloWeatherData \| null }[]` | SILO weather data per selected year. |
+| `nearestRainfallSite`, `nearestMaxTempSite` | `{ stationName, id, distance } \| null` | Nearest monitoring stations. |
+| `areaSquareMeters`, `areaHectares` | `number` (optional) | Only present for `kind: 'polygon'` / `'parcels'`. |
+| `summary` | `string` | Plain-text version of everything shown in the on-map info panel. |
+
+### 2. Saving a selection
+
+Save different fields depending on `kind` — for `point`/`polygon` you need the geometry; for `parcels` you need `parcelKeys` (not the geometry, and not `parcelIds`):
+
+```ts
+window.addEventListener('fullcam-location-selected', (e: CustomEvent<LocationSelectionDetail | null>) => {
+  const detail = e.detail;
+  if (!detail) {
+    localStorage.removeItem('mapSelection');
+    return;
+  }
+
+  const toSave =
+    detail.kind === 'parcels'
+      ? { kind: 'parcels' as const, parcelKeys: detail.parcelKeys ?? [] }
+      : { kind: detail.kind, geometry: detail.geometry };
+
+  localStorage.setItem('mapSelection', JSON.stringify(toSave));
+});
+```
+
+(`localStorage` is just an example — save it however your app persists state: a database, a query param, etc.)
+
+### 3. Restoring a selection
+
+Pass the saved object straight into `initializeMap()` as `initialSelection`:
+
+```ts
+import { initializeMap } from './map';
+import type { SavedLocationSelection } from './map';
+
+const raw = localStorage.getItem('mapSelection');
+const savedSelection: SavedLocationSelection | undefined = raw ? JSON.parse(raw) : undefined;
+
+initializeMap(savedSelection);
+```
+
+`SavedLocationSelection` is a discriminated union matching what you saved above:
+
+```ts
+type SavedLocationSelection =
+  | { kind: 'point'; geometry: Point }      // GeoJSON Point
+  | { kind: 'polygon'; geometry: Polygon }  // GeoJSON Polygon
+  | { kind: 'parcels'; parcelKeys: string[] };
+```
+
+The `initializeMap()` parameter is optional — omitting it (or passing `undefined`) behaves exactly as before, so this is a non-breaking addition if you're already calling `initializeMap()`.
+
+### What happens on restore
+
+- **`point`/`polygon`**: the saved geometry is added as a drawn feature (same as if the user had just drawn it) and the full lookup pipeline reruns immediately — marker/polygon appears, info panel populates, and a fresh `fullcam-location-selected` event fires with up-to-date data.
+- **`parcels`**: each saved parcel is re-fetched individually from its state's cadastre service by object id, so the restored selection is **fully editable** — the user can immediately click to add or remove parcels from it, exactly like a fresh selection. If a saved parcel key no longer resolves (e.g. the parcel was deleted/renumbered by the state authority since you saved it), it's skipped silently (logged to the console) rather than breaking the rest of the restore.
+- Restoring happens once, shortly after the map's initial style finishes loading — there's a brief delay (network round-trips to re-fetch weather/elevation/cadastre data) before the info panel and, for parcels, the highlighted shapes appear.
+
+### Things to watch out for
+
+- **Only pass `parcelKeys`, never `parcelIds`**, when restoring a parcel selection — `parcelIds` are for display and aren't guaranteed to round-trip correctly.
+- **`initialSelection` is a one-shot restore on init**, not a live prop — calling `initializeMap()` again with different data won't update an already-running map. If your app needs to load a *different* saved selection into an already-open map, tear down and re-`initializeMap()`.
+- **A restored selection always re-fetches fresh data.** This map does no caching of weather/SA2/elevation results, by design (per the save/restore approach agreed above) — so treat every restore as a live lookup, not an instant replay of exactly what was previously shown.
+
 ## Configuration
 
 All configuration is managed through environment variables in the `.env` file:

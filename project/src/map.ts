@@ -11,7 +11,7 @@ import turfUnion from '@turf/union';
 import turfArea from '@turf/area';
 // @ts-ignore - Type definitions exist but module resolution fails
 import turfCentroid from '@turf/centroid';
-import type { Feature, Polygon, MultiPolygon } from 'geojson';
+import type { Feature, Point, Polygon, MultiPolygon } from 'geojson';
 import { calculatePolygonArea, calculateCentroid } from './calculations';
 import { 
   getAustralianState, 
@@ -23,7 +23,7 @@ import {
 import type { SiloWeatherData } from './weather';
 import cattleRegBySa2Code from './data/cattle-reg-by-sa2.json';
 
-type LocationSelectionDetail = {
+export type LocationSelectionDetail = {
   kind: 'point' | 'polygon' | 'parcels';
   latitude: number;
   longitude: number;
@@ -31,7 +31,10 @@ type LocationSelectionDetail = {
   sa4Name: string | null;
   sa2Name: string | null;
   cattleReg: string | null;
+  /** Human-readable parcel labels (e.g. "QLD 3RP91637") for display only - not stable enough to re-query by. */
   parcelIds?: string[];
+  /** Stable "STATE:objectid" identifiers - save these (not parcelIds) to restore a parcel selection later via SavedLocationSelection. */
+  parcelKeys?: string[];
   elevation: number | null;
   selectedYears: string[];
   weatherDataByYear: { year: string; weatherData: SiloWeatherData | null }[];
@@ -50,6 +53,14 @@ type LocationSelectionDetail = {
   geometry?: any;
   summary: string;
 };
+
+/** A previously-saved selection (from a LocationSelectionDetail this map published earlier)
+ * to restore on init - pass to initializeMap(). Host apps have no other way to persist a
+ * selection across page loads, since this map keeps no storage of its own. */
+export type SavedLocationSelection =
+  | { kind: 'point'; geometry: Point }
+  | { kind: 'polygon'; geometry: Polygon }
+  | { kind: 'parcels'; parcelKeys: string[] };
 
 function publishLocationSelection(detail: LocationSelectionDetail | null) {
   window.dispatchEvent(new CustomEvent('fullcam-location-selected', { detail }));
@@ -91,6 +102,9 @@ const CADASTRE_STATE_CONFIGS: CadastreStateConfig[] = [
     outFields: 'objectid,lotidstring,lotnumber,planlabel,planlotarea',
     idField: 'lotidstring',
     objectIdField: 'objectid',
+    // maps.six.nsw.gov.au is unreliable (occasional 500s / hangs on both /export and /query),
+    // but showing parcels is preferred over not - click-select queries are timeout-guarded
+    // (CADASTRE_QUERY_TIMEOUT_MS) so a bad request degrades gracefully rather than blocking.
     rasterExportUrl:
       'https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Cadastre/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:9&format=png32&transparent=true&f=image',
   },
@@ -117,27 +131,34 @@ const CADASTRE_STATE_CONFIGS: CadastreStateConfig[] = [
 // client-side minzoom for all cadastre background layers so parcels only render once legible.
 const CADASTRE_PARCEL_MIN_ZOOM = 10;
 
+// Some state cadastre services (NSW's in particular) are prone to hanging indefinitely rather
+// than erroring out. Since queries fan out to all states in parallel via Promise.all, one hung
+// request would otherwise stall every click selection regardless of which state matched.
+const CADASTRE_QUERY_TIMEOUT_MS = 8000;
+
+function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 /**
- * Query a state cadastre service for the parcel containing a point.
- * @returns The parcel feature tagged with which state config matched, or null if none found.
+ * Run an Esri REST cadastre query and return its first feature, tagged with which state config
+ * matched. Shared by point/objectId lookups below, which differ only in which query params they send.
  */
-async function fetchParcelAtPoint(
+async function queryFirstParcel(
   config: CadastreStateConfig,
-  lng: number,
-  lat: number,
+  extraParams: Record<string, string>,
 ): Promise<Feature<Polygon | MultiPolygon> | null> {
   const params = new URLSearchParams({
-    geometry: `${lng},${lat}`,
-    geometryType: 'esriGeometryPoint',
-    inSR: '4326',
-    spatialRel: 'esriSpatialRelIntersects',
     outFields: config.outFields,
     outSR: '4326',
     f: 'geojson',
+    ...extraParams,
   });
 
   try {
-    const response = await fetch(`${config.queryUrl}?${params.toString()}`);
+    const response = await fetchWithTimeout(`${config.queryUrl}?${params.toString()}`, CADASTRE_QUERY_TIMEOUT_MS);
     if (!response.ok) {
       console.error(`Failed to query ${config.name} cadastre parcel:`, response.status);
       return null;
@@ -150,6 +171,34 @@ async function fetchParcelAtPoint(
     console.error(`Error querying ${config.name} cadastre parcel:`, error);
     return null;
   }
+}
+
+/**
+ * Query a state cadastre service for the parcel containing a point.
+ * @returns The parcel feature tagged with which state config matched, or null if none found.
+ */
+async function fetchParcelAtPoint(
+  config: CadastreStateConfig,
+  lng: number,
+  lat: number,
+): Promise<Feature<Polygon | MultiPolygon> | null> {
+  return queryFirstParcel(config, {
+    geometry: `${lng},${lat}`,
+    geometryType: 'esriGeometryPoint',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+  });
+}
+
+/**
+ * Query a state cadastre service for a specific parcel by its Esri object id - used to restore
+ * a previously-saved parcel selection (see SavedLocationSelection) without needing a point to click.
+ */
+async function fetchParcelByObjectId(
+  config: CadastreStateConfig,
+  objectId: string,
+): Promise<Feature<Polygon | MultiPolygon> | null> {
+  return queryFirstParcel(config, { objectIds: objectId });
 }
 
 /**
@@ -312,7 +361,7 @@ function buildWeatherSummaryLines(year: string, weatherData: SiloWeatherData | n
   return lines;
 }
 
-export function initializeMap(): mapboxgl.Map {
+export function initializeMap(initialSelection?: SavedLocationSelection): mapboxgl.Map {
   if (!mapboxAccessToken) {
     const coordinates = document.getElementById('coordinates');
     if (coordinates) {
@@ -462,8 +511,8 @@ export function initializeMap(): mapboxgl.Map {
 
   map.addControl(draw);
 
-  // Click-to-select cadastral parcels (QLD only for now) - builds up a set of parcels
-  // whose union becomes the "property boundary" fed into runAreaLookup.
+  // Click-to-select cadastral parcels - builds up a set of parcels whose union becomes the
+  // "property boundary" fed into runAreaLookup.
   let isSelectingParcels = false;
   const selectedParcels = new Map<string, Feature<Polygon | MultiPolygon>>();
   const selectParcelsToggle = document.getElementById('select-parcels-toggle')!;
@@ -532,7 +581,10 @@ export function initializeMap(): mapboxgl.Map {
     updateParcelSelectionStatus();
   });
 
-  useParcelSelectionBtn.addEventListener('click', async () => {
+  // Unions the current selectedParcels and runs the full lookup pipeline on the result - shared
+  // by the "Use this boundary" button and by restoring a saved parcel selection on init, so both
+  // end up in exactly the same state.
+  async function finalizeParcelSelection() {
     const features = [...selectedParcels.values()];
     if (features.length === 0) return;
 
@@ -541,9 +593,13 @@ export function initializeMap(): mapboxgl.Map {
       null,
     );
     if (merged) {
-      await runAreaLookup('parcels', merged.geometry, features.map(getParcelDisplayId));
+      const parcelIds = features.map(getParcelDisplayId);
+      const parcelKeys = features.map(getParcelKey).filter((key): key is string => key !== null);
+      await runAreaLookup('parcels', merged.geometry, parcelIds, parcelKeys);
     }
-  });
+  }
+
+  useParcelSelectionBtn.addEventListener('click', finalizeParcelSelection);
 
   // Store custom markers
   const customMarkers: { [key: string]: mapboxgl.Marker } = {};
@@ -685,6 +741,7 @@ export function initializeMap(): mapboxgl.Map {
     kind: 'polygon' | 'parcels',
     geometry: Polygon | MultiPolygon,
     parcelIds?: string[],
+    parcelKeys?: string[],
   ): Promise<void> {
     const yearSelect = document.getElementById('year-select') as HTMLSelectElement;
     const selectedYears = Array.from(yearSelect.selectedOptions).map((option) => option.value);
@@ -816,6 +873,7 @@ export function initializeMap(): mapboxgl.Map {
       sa2Name,
       cattleReg,
       parcelIds,
+      parcelKeys,
       elevation,
       selectedYears,
       weatherDataByYear,
@@ -998,6 +1056,62 @@ export function initializeMap(): mapboxgl.Map {
       }
     }
   });
+
+  // Restore a selection a host app saved from a previous fullcam-location-selected event -
+  // this map keeps no storage of its own, so hosts pass it back in on the next page load.
+  async function applyInitialSelection(saved: SavedLocationSelection) {
+    if (saved.kind === 'point' || saved.kind === 'polygon') {
+      clearParcelSelection();
+      draw.deleteAll();
+      const [featureId] = draw.add({ type: 'Feature', geometry: saved.geometry, properties: {} } as any);
+      const feature = draw.get(featureId)!;
+      if (saved.kind === 'point') {
+        addCustomMarker(feature);
+      }
+      await updateArea({ features: [feature] });
+      return;
+    }
+
+    // kind === 'parcels'
+    draw.deleteAll();
+    isSelectingParcels = true;
+    selectParcelsToggle.textContent = 'Cancel Parcel Selection';
+    map.getCanvas().style.cursor = 'crosshair';
+
+    const restoredParcels = await Promise.all(
+      saved.parcelKeys.map(async (key) => {
+        const [stateName, objectId] = key.split(':');
+        const config = CADASTRE_STATE_CONFIGS.find((c) => c.name === stateName);
+        if (!config || !objectId) {
+          console.error('Cannot restore parcel with malformed key:', key);
+          return null;
+        }
+        const parcel = await fetchParcelByObjectId(config, objectId);
+        if (!parcel) {
+          console.error(`Could not restore parcel ${key} - it may no longer exist`);
+        }
+        return parcel;
+      }),
+    );
+
+    for (const parcel of restoredParcels) {
+      if (!parcel) continue;
+      const key = getParcelKey(parcel);
+      if (key) {
+        selectedParcels.set(key, parcel);
+      }
+    }
+
+    renderSelectedParcels();
+    updateParcelSelectionStatus();
+    await finalizeParcelSelection();
+  }
+
+  if (initialSelection) {
+    map.once('load', () => {
+      applyInitialSelection(initialSelection);
+    });
+  }
 
   return map;
 }
