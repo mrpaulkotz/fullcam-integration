@@ -5,6 +5,13 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { polygon, featureCollection, point } from '@turf/helpers';
 // @ts-ignore - Type definitions exist but module resolution fails
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+// @ts-ignore - Type definitions exist but module resolution fails
+import turfUnion from '@turf/union';
+// @ts-ignore - Type definitions exist but module resolution fails
+import turfArea from '@turf/area';
+// @ts-ignore - Type definitions exist but module resolution fails
+import turfCentroid from '@turf/centroid';
+import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import { calculatePolygonArea, calculateCentroid } from './calculations';
 import { 
   getAustralianState, 
@@ -14,13 +21,17 @@ import {
   classifyClimate
 } from './weather';
 import type { SiloWeatherData } from './weather';
+import cattleRegBySa2Code from './data/cattle-reg-by-sa2.json';
 
 type LocationSelectionDetail = {
-  kind: 'point' | 'polygon';
+  kind: 'point' | 'polygon' | 'parcels';
   latitude: number;
   longitude: number;
   state: string | null;
   sa4Name: string | null;
+  sa2Name: string | null;
+  cattleReg: string | null;
+  parcelIds?: string[];
   elevation: number | null;
   selectedYears: string[];
   weatherDataByYear: { year: string; weatherData: SiloWeatherData | null }[];
@@ -47,6 +58,47 @@ function publishLocationSelection(detail: LocationSelectionDetail | null) {
 // Mapbox access token from environment variable
 const mapboxAccessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
 mapboxgl.accessToken = mapboxAccessToken;
+
+// Geoscape Maps API - used for the cadastre (land parcel) layer
+const geoscapeApiKey = import.meta.env.VITE_GEOSCAPE_API_KEY || '';
+const GEOSCAPE_API_BASE_URL = 'https://api.psma.com.au/v1/maps/geoscape_v1/';
+
+// Queensland's public cadastral parcels service (free, no API key) - used for click-to-select parcels
+const QLD_CADASTRE_MAPSERVER_URL = 'https://spatial-gis.information.qld.gov.au/arcgis/rest/services/PlanningCadastre/LandParcelPropertyFramework/MapServer';
+const QLD_CADASTRE_QUERY_URL = `${QLD_CADASTRE_MAPSERVER_URL}/4/query`;
+// Esri dynamic map services aren't pre-cached into {z}/{x}/{y} tiles; Mapbox GL's raster
+// sources support the {bbox-epsg-3857} template specifically for this case.
+const QLD_CADASTRE_RASTER_TILE_URL =
+  `${QLD_CADASTRE_MAPSERVER_URL}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&layers=show:4&format=png32&transparent=true&f=image`;
+
+/**
+ * Query the QLD cadastre service for the parcel containing a point.
+ * @returns The parcel feature (with lot/plan/lotplan/lot_area/locality/shire_name properties), or null if none found.
+ */
+async function fetchQldParcelAtPoint(lng: number, lat: number): Promise<Feature<Polygon | MultiPolygon> | null> {
+  const params = new URLSearchParams({
+    geometry: `${lng},${lat}`,
+    geometryType: 'esriGeometryPoint',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'lot,plan,lotplan,lot_area,locality,shire_name',
+    outSR: '4326',
+    f: 'geojson',
+  });
+
+  try {
+    const response = await fetch(`${QLD_CADASTRE_QUERY_URL}?${params.toString()}`);
+    if (!response.ok) {
+      console.error('Failed to query QLD cadastre parcel:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data.features?.[0] ?? null;
+  } catch (error) {
+    console.error('Error querying QLD cadastre parcel:', error);
+    return null;
+  }
+}
 
 /**
  * Get elevation at a specific point using Mapbox Terrain-RGB tileset
@@ -191,7 +243,13 @@ export function initializeMap(): mapboxgl.Map {
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
     center: [133.75953414518108, -25.806755647793132],
-    zoom: 3
+    zoom: 3,
+    transformRequest: (url, resourceType) => {
+      if ((resourceType === 'Source' || resourceType === 'Tile') && url.startsWith(GEOSCAPE_API_BASE_URL)) {
+        return { url, headers: { Authorization: geoscapeApiKey } };
+      }
+      return { url };
+    },
   });
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -274,9 +332,143 @@ export function initializeMap(): mapboxgl.Map {
         'fill-outline-color': '#0000ff'
       }
     });
+
+    map.addSource('geoscape-cadastre', {
+      type: 'vector',
+      tiles: [`${GEOSCAPE_API_BASE_URL}cadastre/{z}/{x}/{y}.pbf`],
+    });
+    map.addLayer({
+      'id': 'geoscape-cadastre-layer',
+      'type': 'line',
+      'source': 'geoscape-cadastre',
+      'source-layer': 'cadastre',
+      'paint': {
+        'line-color': '#54365a',
+        'line-width': 1
+      }
+    });
+
+    // All QLD cadastral parcel boundaries, always visible (raster export from Esri's dynamic
+    // map service - there's no pre-cached vector tileset available for free)
+    map.addSource('qld-cadastre', {
+      type: 'raster',
+      tiles: [QLD_CADASTRE_RASTER_TILE_URL],
+      tileSize: 256,
+    });
+    map.addLayer({
+      'id': 'qld-cadastre-layer',
+      'type': 'raster',
+      'source': 'qld-cadastre',
+    });
+
+    // Highlight layer for parcels selected via click-to-select
+    map.addSource('selected-parcels', {
+      type: 'geojson',
+      data: featureCollection([]),
+    });
+    map.addLayer({
+      'id': 'selected-parcels-fill',
+      'type': 'fill',
+      'source': 'selected-parcels',
+      'paint': {
+        'fill-color': '#ff9900',
+        'fill-opacity': 0.35
+      }
+    });
+    map.addLayer({
+      'id': 'selected-parcels-outline',
+      'type': 'line',
+      'source': 'selected-parcels',
+      'paint': {
+        'line-color': '#ff9900',
+        'line-width': 2
+      }
+    });
+
+    // Style changes (e.g. satellite toggle) re-add sources/layers, so restore any in-progress selection
+    renderSelectedParcels();
   });
 
   map.addControl(draw);
+
+  // Click-to-select cadastral parcels (QLD only for now) - builds up a set of parcels
+  // whose union becomes the "property boundary" fed into runAreaLookup.
+  let isSelectingParcels = false;
+  const selectedParcels = new Map<string, Feature<Polygon | MultiPolygon>>();
+  const selectParcelsToggle = document.getElementById('select-parcels-toggle')!;
+  const useParcelSelectionBtn = document.getElementById('use-parcel-selection') as HTMLButtonElement;
+  const parcelSelectionStatus = document.getElementById('parcel-selection-status')!;
+
+  function renderSelectedParcels() {
+    const source = map.getSource('selected-parcels') as mapboxgl.GeoJSONSource | undefined;
+    source?.setData(featureCollection([...selectedParcels.values()]) as any);
+  }
+
+  function updateParcelSelectionStatus() {
+    if (selectedParcels.size === 0) {
+      parcelSelectionStatus.textContent = '';
+      useParcelSelectionBtn.style.display = 'none';
+      return;
+    }
+    const totalAreaHectares = turfArea(featureCollection([...selectedParcels.values()]) as any) / 10000;
+    const lotPlans = [...selectedParcels.keys()];
+    parcelSelectionStatus.textContent =
+      `${selectedParcels.size} parcel${selectedParcels.size > 1 ? 's' : ''} selected (${lotPlans.join(', ')}) - ${totalAreaHectares.toFixed(2)} ha total. Click "Use this boundary" to continue.`;
+    useParcelSelectionBtn.style.display = '';
+  }
+
+  function clearParcelSelection() {
+    selectedParcels.clear();
+    renderSelectedParcels();
+    updateParcelSelectionStatus();
+  }
+
+  selectParcelsToggle.addEventListener('click', () => {
+    isSelectingParcels = !isSelectingParcels;
+    selectParcelsToggle.textContent = isSelectingParcels ? 'Cancel Parcel Selection' : 'Select Parcels';
+    map.getCanvas().style.cursor = isSelectingParcels ? 'crosshair' : '';
+    if (isSelectingParcels) {
+      // Parcel selection and the point/polygon draw flow are mutually exclusive
+      draw.deleteAll();
+      document.getElementById('coordinates')!.innerHTML = 'Click parcels on the map to select them';
+    } else {
+      clearParcelSelection();
+    }
+  });
+
+  map.on('click', async (e) => {
+    if (!isSelectingParcels) return;
+
+    const parcel = await fetchQldParcelAtPoint(e.lngLat.lng, e.lngLat.lat);
+    if (!parcel) {
+      if (selectedParcels.size === 0) {
+        parcelSelectionStatus.textContent = 'No cadastral parcel found at that location';
+      }
+      return;
+    }
+
+    const key = (parcel.properties?.lotplan as string | undefined) ?? String(parcel.properties?.objectid ?? `${e.lngLat.lng},${e.lngLat.lat}`);
+    if (selectedParcels.has(key)) {
+      selectedParcels.delete(key);
+    } else {
+      selectedParcels.set(key, parcel);
+    }
+    renderSelectedParcels();
+    updateParcelSelectionStatus();
+  });
+
+  useParcelSelectionBtn.addEventListener('click', async () => {
+    const features = [...selectedParcels.values()];
+    if (features.length === 0) return;
+
+    const merged = features.reduce<Feature<Polygon | MultiPolygon> | null>(
+      (acc, f) => (acc ? (turfUnion(acc, f) as Feature<Polygon | MultiPolygon> | null) ?? acc : f),
+      null,
+    );
+    if (merged) {
+      await runAreaLookup('parcels', merged.geometry, [...selectedParcels.keys()]);
+    }
+  });
 
   // Store custom markers
   const customMarkers: { [key: string]: mapboxgl.Marker } = {};
@@ -315,6 +507,7 @@ export function initializeMap(): mapboxgl.Map {
 
   // Listen for draw.create to add custom markers
   map.on('draw.create', (e: any) => {
+    clearParcelSelection();
     e.features.forEach((feature: any) => {
       if (feature.geometry.type === 'Point') {
         addCustomMarker(feature);
@@ -349,35 +542,53 @@ export function initializeMap(): mapboxgl.Map {
     updateArea(e);
   });
 
-  // Function to get SA4_NAME21 from abs-sa2-layer at a location
-  function getSA4Name(lng: number, lat: number): string | null {
+  // The abs-sa2-layer tileset's SA2 code property name isn't confirmed yet -
+  // try known ABS ASGS field names until the layer is updated to a known schema.
+  const SA2_CODE_PROPERTY_CANDIDATES = ['SA2_CODE21', 'SA2_MAIN21', 'SA2_MAIN16'];
+
+  function getSa2Code(properties: Record<string, any>): string | null {
+    for (const key of SA2_CODE_PROPERTY_CANDIDATES) {
+      if (properties[key]) {
+        return String(properties[key]);
+      }
+    }
+    return null;
+  }
+
+  // Function to get SA2_NAME21 / SA4_NAME21 / Cattle_Reg from abs-sa2-layer at a location
+  function getSA2Region(lng: number, lat: number): { sa2Name: string | null; sa4Name: string | null; cattleReg: string | null } {
+    const empty = { sa2Name: null, sa4Name: null, cattleReg: null };
     try {
       // Check if layer exists
       if (!map.getLayer('abs-sa2-layer')) {
         console.log('abs-sa2-layer not found');
-        return null;
+        return empty;
       }
 
       const pt = point([lng, lat]);
-      
+
       // Query rendered features at the point location
       const screenPoint = map.project([lng, lat]);
       const features = map.queryRenderedFeatures(screenPoint, {
         layers: ['abs-sa2-layer']
       });
-      
+
       console.log('SA2 features found at point:', features.length);
-      
+
       // Find the feature that contains this point
       for (const feature of features) {
         if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
           try {
             // Use turf to check if point is inside polygon
             const isInside = booleanPointInPolygon(pt, feature.geometry as any);
-            
-            if (isInside && feature.properties && feature.properties['SA4_NAME21']) {
-              console.log('Found SA4 region:', feature.properties['SA4_NAME21']);
-              return feature.properties['SA4_NAME21'];
+
+            if (isInside && feature.properties) {
+              const sa2Name = feature.properties['SA2_NAME21'] || null;
+              const sa4Name = feature.properties['SA4_NAME21'] || null;
+              const sa2Code = getSa2Code(feature.properties);
+              const cattleReg = sa2Code ? (cattleRegBySa2Code as Record<string, string>)[sa2Code] || null : null;
+              console.log('Found SA2 region:', sa2Name, 'SA4 region:', sa4Name, 'SA2 code:', sa2Code, 'Cattle_Reg:', cattleReg);
+              return { sa2Name, sa4Name, cattleReg };
             }
           } catch (e) {
             // Skip invalid geometries
@@ -385,12 +596,169 @@ export function initializeMap(): mapboxgl.Map {
           }
         }
       }
-      
-      console.log('No SA4 region found - may need to zoom in for data to load');
+
+      console.log('No SA2/SA4 region found - may need to zoom in for data to load');
     } catch (error) {
-      console.error('Error querying SA4 name:', error);
+      console.error('Error querying SA2/SA4 region:', error);
     }
-    return null;
+    return empty;
+  }
+
+  // Runs the full state/weather/elevation/SA2/rainfall lookup pipeline for an area (a drawn
+  // polygon, or the union of one or more click-selected cadastral parcels) and publishes it.
+  async function runAreaLookup(
+    kind: 'polygon' | 'parcels',
+    geometry: Polygon | MultiPolygon,
+    parcelIds?: string[],
+  ): Promise<void> {
+    const yearSelect = document.getElementById('year-select') as HTMLSelectElement;
+    const selectedYears = Array.from(yearSelect.selectedOptions).map((option) => option.value);
+
+    // Keep the existing draw-polygon path on its original hand-rolled math; only merged
+    // multi-parcel MultiPolygons use turf, since calculatePolygonArea/calculateCentroid don't support them.
+    let areaInSquareMeters: number;
+    let centroid: { lng: number; lat: number };
+    if (geometry.type === 'Polygon') {
+      areaInSquareMeters = calculatePolygonArea(geometry.coordinates);
+      centroid = calculateCentroid(geometry.coordinates);
+    } else {
+      areaInSquareMeters = turfArea(geometry);
+      const centroidFeature = turfCentroid(geometry);
+      centroid = { lng: centroidFeature.geometry.coordinates[0], lat: centroidFeature.geometry.coordinates[1] };
+    }
+    const areaInHectares = areaInSquareMeters / 10000;
+    const headerLabel = kind === 'parcels'
+      ? `Parcels selected${parcelIds && parcelIds.length ? ` (${parcelIds.join(', ')})` : ''}`
+      : 'Polygon selected';
+
+    // Show loading message
+    document.getElementById('coordinates')!.innerHTML = `Calculating ${kind === 'parcels' ? 'parcel' : 'polygon'} data...`;
+
+    const state = await getAustralianState(centroid.lng, centroid.lat);
+    const weatherDataByYear = await Promise.all(
+      selectedYears.map(async (year) => ({
+        year,
+        weatherData: await fetchSiloWeatherData(centroid.lat, centroid.lng, year),
+      })),
+    );
+    const elevation = await getElevation(centroid.lng, centroid.lat);
+    const nearestRainfallSite = getNearestRainfallSite(map, centroid.lng, centroid.lat);
+    const nearestMaxTempSite = getNearestMaxTempSite(map, centroid.lng, centroid.lat);
+    const { sa2Name, sa4Name, cattleReg } = getSA2Region(centroid.lng, centroid.lat);
+
+    console.log(`${kind} centroid:`, { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg });
+
+    let elevationInfo = '';
+    if (elevation !== null) {
+      elevationInfo = `<br>Elevation (centroid): ${elevation} m`;
+    }
+
+    const weatherInfo = weatherDataByYear
+      .map(({ year, weatherData }) => buildWeatherInfoHtml(year, weatherData, elevation))
+      .join('');
+
+    let RainfallSiteInfo = '';
+    if (nearestRainfallSite) {
+      const props = nearestRainfallSite.properties;
+      RainfallSiteInfo = `<br><br>Nearest Rainfall Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestRainfallSite.distance} km`;
+    }
+
+    let MaxTempSiteInfo = '';
+    if (nearestMaxTempSite) {
+      const props = nearestMaxTempSite.properties;
+      MaxTempSiteInfo = `<br><br>Nearest Max Temp Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestMaxTempSite.distance} km`;
+    }
+
+    let sa4Info = '';
+    if (sa4Name) {
+      sa4Info = `<br><br><strong>SA4 Region:</strong> ${sa4Name}`;
+    } else {
+      sa4Info = `<br><br><strong>SA4 Region:</strong> No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again`;
+    }
+
+    let sa2Info = '';
+    if (sa2Name) {
+      sa2Info = `<br><strong>SA2 Region:</strong> ${sa2Name}`;
+    } else {
+      sa2Info = `<br><strong>SA2 Region:</strong> No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again`;
+    }
+
+    let cattleRegInfo = '';
+    if (cattleReg) {
+      cattleRegInfo = `<br><strong>Cattle Region:</strong> ${cattleReg}`;
+    }
+
+    document.getElementById('coordinates')!.innerHTML =
+      `${headerLabel}<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+
+    const summaryLines: (string | null)[] = [
+      headerLabel,
+      `Area: ${areaInHectares.toFixed(2)} hectares`,
+      `(${areaInSquareMeters.toFixed(2)} m²)`,
+      'Centroid:',
+      `Latitude: ${centroid.lat.toFixed(6)}`,
+      `Longitude: ${centroid.lng.toFixed(6)}`,
+      elevation !== null ? `Elevation (centroid): ${elevation} m` : null,
+      `State: ${state}`,
+      sa4Name
+        ? `SA4 Region: ${sa4Name}`
+        : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+      sa2Name
+        ? `SA2 Region: ${sa2Name}`
+        : 'SA2 Region: No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+      cattleReg ? `Cattle Region: ${cattleReg}` : null,
+      ...weatherDataByYear.flatMap(({ year, weatherData }) =>
+        buildWeatherSummaryLines(year, weatherData, elevation),
+      ),
+    ];
+
+    if (nearestRainfallSite) {
+      const props = nearestRainfallSite.properties;
+      summaryLines.push(
+        'Nearest Rainfall Site:',
+        `Station: ${props.station_name || props.name || 'N/A'}`,
+        `ID: ${props.site || props.id || 'N/A'}`,
+        `Distance: ${nearestRainfallSite.distance} km`,
+      );
+    }
+
+    if (nearestMaxTempSite) {
+      const props = nearestMaxTempSite.properties;
+      summaryLines.push(
+        'Nearest Max Temp Site:',
+        `Station: ${props.station_name || props.name || 'N/A'}`,
+        `ID: ${props.site || props.id || 'N/A'}`,
+        `Distance: ${nearestMaxTempSite.distance} km`,
+      );
+    }
+
+    publishLocationSelection({
+      kind,
+      latitude: centroid.lat,
+      longitude: centroid.lng,
+      state,
+      sa4Name,
+      sa2Name,
+      cattleReg,
+      parcelIds,
+      elevation,
+      selectedYears,
+      weatherDataByYear,
+      nearestRainfallSite: nearestRainfallSite ? {
+        stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
+        id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
+        distance: nearestRainfallSite.distance,
+      } : null,
+      nearestMaxTempSite: nearestMaxTempSite ? {
+        stationName: nearestMaxTempSite.properties.station_name || nearestMaxTempSite.properties.name || 'N/A',
+        id: String(nearestMaxTempSite.properties.site || nearestMaxTempSite.properties.id || 'N/A'),
+        distance: nearestMaxTempSite.distance,
+      } : null,
+      areaSquareMeters: areaInSquareMeters,
+      areaHectares: areaInHectares,
+      geometry,
+      summary: summaryLines.filter(Boolean).join('\n'),
+    });
   }
 
   async function updateArea(e: any) {
@@ -419,9 +787,9 @@ export function initializeMap(): mapboxgl.Map {
         const elevation = await getElevation(lng, lat);
         const nearestRainfallSite = getNearestRainfallSite(map, lng, lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, lng, lat);
-        const sa4Name = getSA4Name(lng, lat);
+        const { sa2Name, sa4Name, cattleReg } = getSA2Region(lng, lat);
 
-        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherDataByYear, sa4Name });
+        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg });
 
         let elevationInfo = '';
         if (elevation !== null) {
@@ -451,8 +819,20 @@ export function initializeMap(): mapboxgl.Map {
           sa4Info = `<br><br><strong>SA4 Region:</strong> No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again`;
         }
 
+        let sa2Info = '';
+        if (sa2Name) {
+          sa2Info = `<br><strong>SA2 Region:</strong> ${sa2Name}`;
+        } else {
+          sa2Info = `<br><strong>SA2 Region:</strong> No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again`;
+        }
+
+        let cattleRegInfo = '';
+        if (cattleReg) {
+          cattleRegInfo = `<br><strong>Cattle Region:</strong> ${cattleReg}`;
+        }
+
         document.getElementById('coordinates')!.innerHTML =
-          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
 
         const pointSummaryLines: (string | null)[] = [
           'Marker selected',
@@ -463,6 +843,10 @@ export function initializeMap(): mapboxgl.Map {
           sa4Name
             ? `SA4 Region: ${sa4Name}`
             : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+          sa2Name
+            ? `SA2 Region: ${sa2Name}`
+            : 'SA2 Region: No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
+          cattleReg ? `Cattle Region: ${cattleReg}` : null,
           ...weatherDataByYear.flatMap(({ year, weatherData }) =>
             buildWeatherSummaryLines(year, weatherData, elevation),
           ),
@@ -494,6 +878,8 @@ export function initializeMap(): mapboxgl.Map {
           longitude: lng,
           state,
           sa4Name,
+          sa2Name,
+          cattleReg,
           elevation,
           selectedYears,
           weatherDataByYear,
@@ -513,119 +899,7 @@ export function initializeMap(): mapboxgl.Map {
       }
       // Check if it's a polygon
       else if (feature.geometry.type === 'Polygon') {
-        const areaInSquareMeters = calculatePolygonArea(feature.geometry.coordinates);
-        const areaInHectares = areaInSquareMeters / 10000;
-        const centroid = calculateCentroid(feature.geometry.coordinates);
-        
-        // Show loading message
-        document.getElementById('coordinates')!.innerHTML = 'Calculating polygon data...';
-        
-        const state = await getAustralianState(centroid.lng, centroid.lat);
-        const weatherDataByYear = await Promise.all(
-          selectedYears.map(async (year) => ({
-            year,
-            weatherData: await fetchSiloWeatherData(centroid.lat, centroid.lng, year),
-          })),
-        );
-        const elevation = await getElevation(centroid.lng, centroid.lat);
-        const nearestRainfallSite = getNearestRainfallSite(map, centroid.lng, centroid.lat);
-        const nearestMaxTempSite = getNearestMaxTempSite(map, centroid.lng, centroid.lat);
-        const sa4Name = getSA4Name(centroid.lng, centroid.lat);
-
-        console.log('Polygon centroid:', { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherDataByYear, sa4Name });
-
-        let elevationInfo = '';
-        if (elevation !== null) {
-          elevationInfo = `<br>Elevation (centroid): ${elevation} m`;
-        }
-
-        const weatherInfo = weatherDataByYear
-          .map(({ year, weatherData }) => buildWeatherInfoHtml(year, weatherData, elevation))
-          .join('');
-
-        let RainfallSiteInfo = '';
-        if (nearestRainfallSite) {
-          const props = nearestRainfallSite.properties;
-          RainfallSiteInfo = `<br><br>Nearest Rainfall Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestRainfallSite.distance} km`;
-        }
-
-        let MaxTempSiteInfo = '';
-        if (nearestMaxTempSite) {
-          const props = nearestMaxTempSite.properties;
-          MaxTempSiteInfo = `<br><br>Nearest Max Temp Site:<br>Station: ${props.station_name || props.name || 'N/A'}<br>ID: ${props.site || props.id || 'N/A'}<br>Distance: ${nearestMaxTempSite.distance} km`;
-        }
-
-        let sa4Info = '';
-        if (sa4Name) {
-          sa4Info = `<br><br><strong>SA4 Region:</strong> ${sa4Name}`;
-        } else {
-          sa4Info = `<br><br><strong>SA4 Region:</strong> No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again`;
-        }
-
-        document.getElementById('coordinates')!.innerHTML =
-          `Polygon selected<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
-
-        const polygonSummaryLines: (string | null)[] = [
-          'Polygon selected',
-          `Area: ${areaInHectares.toFixed(2)} hectares`,
-          `(${areaInSquareMeters.toFixed(2)} m²)`,
-          'Centroid:',
-          `Latitude: ${centroid.lat.toFixed(6)}`,
-          `Longitude: ${centroid.lng.toFixed(6)}`,
-          elevation !== null ? `Elevation (centroid): ${elevation} m` : null,
-          `State: ${state}`,
-          sa4Name
-            ? `SA4 Region: ${sa4Name}`
-            : 'SA4 Region: No SA4 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
-          ...weatherDataByYear.flatMap(({ year, weatherData }) =>
-            buildWeatherSummaryLines(year, weatherData, elevation),
-          ),
-        ];
-
-        if (nearestRainfallSite) {
-          const props = nearestRainfallSite.properties;
-          polygonSummaryLines.push(
-            'Nearest Rainfall Site:',
-            `Station: ${props.station_name || props.name || 'N/A'}`,
-            `ID: ${props.site || props.id || 'N/A'}`,
-            `Distance: ${nearestRainfallSite.distance} km`,
-          );
-        }
-
-        if (nearestMaxTempSite) {
-          const props = nearestMaxTempSite.properties;
-          polygonSummaryLines.push(
-            'Nearest Max Temp Site:',
-            `Station: ${props.station_name || props.name || 'N/A'}`,
-            `ID: ${props.site || props.id || 'N/A'}`,
-            `Distance: ${nearestMaxTempSite.distance} km`,
-          );
-        }
-
-        publishLocationSelection({
-          kind: 'polygon',
-          latitude: centroid.lat,
-          longitude: centroid.lng,
-          state,
-          sa4Name,
-          elevation,
-          selectedYears,
-          weatherDataByYear,
-          nearestRainfallSite: nearestRainfallSite ? {
-            stationName: nearestRainfallSite.properties.station_name || nearestRainfallSite.properties.name || 'N/A',
-            id: String(nearestRainfallSite.properties.site || nearestRainfallSite.properties.id || 'N/A'),
-            distance: nearestRainfallSite.distance,
-          } : null,
-          nearestMaxTempSite: nearestMaxTempSite ? {
-            stationName: nearestMaxTempSite.properties.station_name || nearestMaxTempSite.properties.name || 'N/A',
-            id: String(nearestMaxTempSite.properties.site || nearestMaxTempSite.properties.id || 'N/A'),
-            distance: nearestMaxTempSite.distance,
-          } : null,
-          areaSquareMeters: areaInSquareMeters,
-          areaHectares: areaInHectares,
-          geometry: feature.geometry,
-          summary: polygonSummaryLines.filter(Boolean).join('\n'),
-        });
+        await runAreaLookup('polygon', feature.geometry);
       }
     } else if (data.features.length === 0) {
       document.getElementById('coordinates')!.innerHTML = 'Draw on the map';
