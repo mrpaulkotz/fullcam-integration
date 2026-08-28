@@ -13,8 +13,19 @@
       <div id="map"></div>
       <button id="style-toggle">Switch to Satellite</button>
       <button id="select-parcels-toggle">Select Parcels</button>
+      <div>
+        <label for="leaching-layer-toggle">
+          <input type="checkbox" id="leaching-layer-toggle" />
+          Show leaching map
+        </label>
+        <span id="leaching-zoom-notice"></span>
+      </div>
       <button id="use-parcel-selection" style="display: none;">Use this boundary</button>
       <div id="parcel-selection-status"></div>
+      <div>
+        <label for="kml-upload">Upload KML/KMZ boundary: </label>
+        <input type="file" id="kml-upload" accept=".kml,.kmz" />
+      </div>
       <div>
         <label for="year-select">Years: </label>
         <select id="year-select" multiple size="5">

@@ -11,9 +11,12 @@
   },
   "dependencies": {
     "@mapbox/mapbox-gl-draw": "^1.4.3",
+    "@mapbox/togeojson": "^0.16.2",
     "@turf/area": "^6.5.0",
     "@turf/bbox": "^6.5.0",
     "@turf/turf": "^6.5.0",
+    "geotiff": "^3.0.5",
+    "jszip": "^3.10.1",
     "mapbox-gl": "^3.0.1"
   },
   "devDependencies": {

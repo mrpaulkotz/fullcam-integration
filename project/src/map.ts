@@ -11,7 +11,12 @@ import turfUnion from '@turf/union';
 import turfArea from '@turf/area';
 // @ts-ignore - Type definitions exist but module resolution fails
 import turfCentroid from '@turf/centroid';
-import type { Feature, Point, Polygon, MultiPolygon } from 'geojson';
+// @ts-ignore - Type definitions exist but module resolution fails
+import turfBbox from '@turf/bbox';
+// @ts-ignore - No type definitions published for this package
+import toGeoJSON from '@mapbox/togeojson';
+import JSZip from 'jszip';
+import type { Feature, FeatureCollection, Point, Polygon, MultiPolygon } from 'geojson';
 import { calculatePolygonArea, calculateCentroid } from './calculations';
 import { 
   getAustralianState, 
@@ -22,6 +27,7 @@ import {
 } from './weather';
 import type { SiloWeatherData } from './weather';
 import cattleRegBySa2Code from './data/cattle-reg-by-sa2.json';
+import { getLeachingRisk } from './leaching';
 
 /** The map's camera position - center (lng/lat) and zoom - at the time a selection was made. */
 export type MapView = {
@@ -40,6 +46,8 @@ export type LocationSelectionDetail = {
   sa4Name: string | null;
   sa2Name: string | null;
   cattleReg: string | null;
+  /** Soil leaching zone at this point - null if outside the classified raster's extent/NoData. */
+  leachingRisk: boolean | null;
   /** Human-readable parcel labels (e.g. "QLD 3RP91637") for display only - not stable enough to re-query by. */
   parcelIds?: string[];
   /** Stable "STATE:objectid" identifiers - save these (not parcelIds) to restore a parcel selection later via SavedLocationSelection. */
@@ -144,6 +152,15 @@ const CADASTRE_STATE_CONFIGS: CadastreStateConfig[] = [
 // QLD's own cadastre layer enforces minScale: 1,000,000 server-side (~zoom 9.2); used as the
 // client-side minzoom for all cadastre background layers so parcels only render once legible.
 const CADASTRE_PARCEL_MIN_ZOOM = 10;
+
+// The leaching-map tileset (pkotzzneagcrc.8uf3g8) has real tile data only up to its native
+// maxzoom (4, matching its ~10km/pixel source resolution). Beyond that, Mapbox synthesizes an
+// overzoomed tile - and that path drops the layer's alpha transparency, rendering solid black
+// instead (reproduces in Mapbox Studio's own preview too, so it's a Mapbox-side limitation, not
+// something fixable here). Capping the layer's own maxzoom hides it before that kicks in, rather
+// than showing the broken black fill. The true/false answer at a point is unaffected - it's read
+// from the source raster directly (see leaching.ts), not from this tileset, at any zoom.
+const LEACHING_LAYER_MAX_ZOOM = 2.5;
 
 // Some state cadastre services (NSW's in particular) are prone to hanging indefinitely rather
 // than erroring out. Since queries fan out to all states in parallel via Promise.all, one hung
@@ -375,6 +392,20 @@ function buildWeatherSummaryLines(year: string, weatherData: SiloWeatherData | n
   return lines;
 }
 
+/**
+ * Build the HTML fragment describing the soil leaching zone at a point - empty string if the
+ * point falls outside the classified raster's extent or in a NoData cell.
+ */
+function buildLeachingInfoHtml(leachingRisk: boolean | null): string {
+  if (leachingRisk === null) return '';
+  return `<br><strong>Is in leaching zone:</strong> ${leachingRisk ? 'Yes' : 'No'}`;
+}
+
+function buildLeachingSummaryLine(leachingRisk: boolean | null): string | null {
+  if (leachingRisk === null) return null;
+  return `Is in leaching zone: ${leachingRisk ? 'Yes' : 'No'}`;
+}
+
 export function initializeMap(initialSelection?: SavedLocationSelection): mapboxgl.Map {
   if (!mapboxAccessToken) {
     const coordinates = document.getElementById('coordinates');
@@ -415,6 +446,30 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
     isSatellite = !isSatellite;
   });
 
+  // Toggle the soil leaching zone overlay - re-applied after style changes in the
+  // style.load handler below, since setStyle() wipes and re-adds all layers.
+  let leachingLayerVisible = false;
+  const leachingLayerToggle = document.getElementById('leaching-layer-toggle') as HTMLInputElement | null;
+  const leachingZoomNotice = document.getElementById('leaching-zoom-notice')!;
+
+  // The layer itself is hidden past LEACHING_LAYER_MAX_ZOOM (see its definition for why) - this
+  // just tells the user their toggle is still "on" rather than letting it look like it broke.
+  function updateLeachingZoomNotice() {
+    leachingZoomNotice.textContent =
+      leachingLayerVisible && map.getZoom() >= LEACHING_LAYER_MAX_ZOOM
+        ? 'Leaching map visually hidden, but still active'
+        : '';
+  }
+
+  leachingLayerToggle?.addEventListener('change', () => {
+    leachingLayerVisible = leachingLayerToggle.checked;
+    if (map.getLayer('leaching-map-layer')) {
+      map.setLayoutProperty('leaching-map-layer', 'visibility', leachingLayerVisible ? 'visible' : 'none');
+    }
+    updateLeachingZoomNotice();
+  });
+  map.on('zoom', updateLeachingZoomNotice);
+
   // Add drawing controls
   const draw = new MapboxDraw({
     displayControlsDefault: false,
@@ -441,6 +496,10 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       'type': 'circle',
       'source': 'weather-stations-max-temp',
       'source-layer': 'weather_stations_max_temp-6sezsw',
+      // Hidden - kept as a source-only layer so querySourceFeatures (getNearestMaxTempSite) still works.
+      'layout': {
+        'visibility': 'none'
+      },
       'paint': {
         'circle-radius': 4,
         'circle-color': '#ffff00',
@@ -457,6 +516,10 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       'type': 'circle',
       'source': 'weather-stations-rainfall',
       'source-layer': 'weather_stations_rainfall-0gek19',
+      // Hidden - kept as a source-only layer so querySourceFeatures (getNearestRainfallSite) still works.
+      'layout': {
+        'visibility': 'none'
+      },
       'paint': {
         'circle-radius': 4,
         'circle-color': '#ff00ff',
@@ -500,6 +563,23 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       });
     });
 
+    // Soil leaching zone overlay (visual only - the click-to-check true/false answer is read
+    // from the original raster directly via leaching.ts, not from this tileset; see there for why).
+    // Hidden by default and toggled via the "Show leaching map" checkbox.
+    map.addSource('leaching-map', {
+      type: 'raster',
+      url: 'mapbox://pkotzzneagcrc.8uf3g8',
+    });
+    map.addLayer({
+      'id': 'leaching-map-layer',
+      'type': 'raster',
+      'source': 'leaching-map',
+      'maxzoom': LEACHING_LAYER_MAX_ZOOM,
+      'layout': {
+        'visibility': 'none'
+      }
+    });
+
     // Highlight layer for parcels selected via click-to-select
     map.addSource('selected-parcels', {
       type: 'geojson',
@@ -524,8 +604,35 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       }
     });
 
+    // Highlight layer for an uploaded KML/KMZ boundary that couldn't be added to MapboxDraw
+    // (MapboxDraw only supports a single Polygon - disjoint multi-part shapes render here instead).
+    map.addSource('kml-boundary', {
+      type: 'geojson',
+      data: featureCollection([]),
+    });
+    map.addLayer({
+      'id': 'kml-boundary-fill',
+      'type': 'fill',
+      'source': 'kml-boundary',
+      'paint': {
+        'fill-color': '#2196f3',
+        'fill-opacity': 0.25
+      }
+    });
+    map.addLayer({
+      'id': 'kml-boundary-outline',
+      'type': 'line',
+      'source': 'kml-boundary',
+      'paint': {
+        'line-color': '#2196f3',
+        'line-width': 2
+      }
+    });
+
     // Style changes (e.g. satellite toggle) re-add sources/layers, so restore any in-progress selection
     renderSelectedParcels();
+    renderKmlBoundary();
+    map.setLayoutProperty('leaching-map-layer', 'visibility', leachingLayerVisible ? 'visible' : 'none');
   });
 
   map.addControl(draw);
@@ -562,10 +669,25 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
     updateParcelSelectionStatus();
   }
 
+  // Displays an uploaded KML/KMZ boundary that couldn't be added to MapboxDraw (a MultiPolygon -
+  // draw only supports a single Polygon). Cleared whenever another selection method takes over.
+  let kmlBoundaryFeature: Feature<Polygon | MultiPolygon> | null = null;
+
+  function renderKmlBoundary() {
+    const source = map.getSource('kml-boundary') as mapboxgl.GeoJSONSource | undefined;
+    source?.setData(featureCollection(kmlBoundaryFeature ? [kmlBoundaryFeature] : []) as any);
+  }
+
+  function clearKmlBoundary() {
+    kmlBoundaryFeature = null;
+    renderKmlBoundary();
+  }
+
   selectParcelsToggle.addEventListener('click', () => {
     isSelectingParcels = !isSelectingParcels;
     selectParcelsToggle.textContent = isSelectingParcels ? 'Cancel Parcel Selection' : 'Select Parcels';
     map.getCanvas().style.cursor = isSelectingParcels ? 'crosshair' : '';
+    clearKmlBoundary();
     if (isSelectingParcels) {
       // Parcel selection and the point/polygon draw flow are mutually exclusive
       draw.deleteAll();
@@ -620,6 +742,90 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
 
   useParcelSelectionBtn.addEventListener('click', finalizeParcelSelection);
 
+  // Upload a .kml/.kmz file and use its polygon(s) as the area boundary - same downstream
+  // pipeline (state/weather/elevation/SA2/rainfall lookup) as a drawn polygon or parcel selection.
+  // .kmz is just a zip archive containing a .kml file (plus optional media) - unzip it first.
+  async function extractKmlText(file: File): Promise<string | null> {
+    if (!file.name.toLowerCase().endsWith('.kmz')) {
+      return file.text();
+    }
+    const zip = await JSZip.loadAsync(file);
+    const kmlEntry = Object.values(zip.files).find(
+      (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.kml'),
+    );
+    return kmlEntry ? kmlEntry.async('text') : null;
+  }
+
+  const kmlUploadInput = document.getElementById('kml-upload') as HTMLInputElement | null;
+  kmlUploadInput?.addEventListener('change', async () => {
+    const file = kmlUploadInput.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await extractKmlText(file);
+      if (text === null) {
+        document.getElementById('coordinates')!.innerHTML = 'No .kml file found inside that .kmz archive';
+        return;
+      }
+      const xmlDoc = new DOMParser().parseFromString(text, 'text/xml');
+      if (xmlDoc.querySelector('parsererror')) {
+        document.getElementById('coordinates')!.innerHTML = 'Could not read KML file - it does not appear to be valid XML';
+        return;
+      }
+
+      const geojson = toGeoJSON.kml(xmlDoc) as FeatureCollection;
+      const polygons = geojson.features.filter(
+        (f): f is Feature<Polygon | MultiPolygon> =>
+          f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon',
+      );
+
+      if (polygons.length === 0) {
+        document.getElementById('coordinates')!.innerHTML = 'No polygon found in that KML file';
+        return;
+      }
+
+      const merged = polygons.reduce<Feature<Polygon | MultiPolygon> | null>(
+        (acc, f) => (acc ? (turfUnion(acc, f) as Feature<Polygon | MultiPolygon> | null) ?? acc : f),
+        null,
+      )!;
+
+      clearParcelSelection();
+      draw.deleteAll();
+
+      if (merged.geometry.type === 'Polygon') {
+        // Add as an editable draw feature, same as a hand-drawn polygon.
+        clearKmlBoundary();
+        draw.add({ type: 'Feature', geometry: merged.geometry, properties: {} } as any);
+      } else {
+        // Disjoint polygons that didn't merge into one ring - MapboxDraw can't hold a
+        // MultiPolygon, so display it on its own highlight layer instead.
+        kmlBoundaryFeature = merged;
+        renderKmlBoundary();
+      }
+
+      // Pan/zoom so the uploaded shape fills most of the view without being cut off, then
+      // run the full lookup (state/weather/elevation/SA2/rainfall) once the camera settles -
+      // querying SA2/cadastre layers before the map has moved to a legible zoom returns nothing.
+      const [minLng, minLat, maxLng, maxLat] = turfBbox(merged) as [number, number, number, number];
+      await new Promise<void>((resolve) => {
+        map.once('moveend', () => resolve());
+        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 50 });
+      });
+
+      if (merged.geometry.type === 'Polygon') {
+        const feature = draw.getAll().features[0];
+        if (feature) await updateArea({ features: [feature] });
+      } else {
+        await runAreaLookup('polygon', merged.geometry);
+      }
+    } catch (error) {
+      console.error('Error parsing KML file:', error);
+      document.getElementById('coordinates')!.innerHTML = 'Error parsing KML file';
+    } finally {
+      kmlUploadInput.value = '';
+    }
+  });
+
   // Store custom markers
   const customMarkers: { [key: string]: mapboxgl.Marker } = {};
 
@@ -658,6 +864,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
   // Listen for draw.create to add custom markers
   map.on('draw.create', (e: any) => {
     clearParcelSelection();
+    clearKmlBoundary();
     e.features.forEach((feature: any) => {
       if (feature.geometry.type === 'Point') {
         addCustomMarker(feature);
@@ -796,8 +1003,9 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
     const nearestRainfallSite = getNearestRainfallSite(map, centroid.lng, centroid.lat);
     const nearestMaxTempSite = getNearestMaxTempSite(map, centroid.lng, centroid.lat);
     const { sa2Name, sa4Name, cattleReg } = getSA2Region(centroid.lng, centroid.lat);
+    const leachingRisk = await getLeachingRisk(centroid.lng, centroid.lat);
 
-    console.log(`${kind} centroid:`, { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg });
+    console.log(`${kind} centroid:`, { latitude: centroid.lat, longitude: centroid.lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg, leachingRisk });
 
     let elevationInfo = '';
     if (elevation !== null) {
@@ -839,8 +1047,10 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       cattleRegInfo = `<br><strong>Cattle Region:</strong> ${cattleReg}`;
     }
 
+    const leachingInfo = buildLeachingInfoHtml(leachingRisk);
+
     document.getElementById('coordinates')!.innerHTML =
-      `${headerLabel}<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+      `${headerLabel}<br>Area: ${areaInHectares.toFixed(2)} hectares<br>(${areaInSquareMeters.toFixed(2)} m²)<br>Centroid:<br>Latitude: ${centroid.lat.toFixed(6)}<br>Longitude: ${centroid.lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${leachingInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
 
     const summaryLines: (string | null)[] = [
       headerLabel,
@@ -858,6 +1068,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
         ? `SA2 Region: ${sa2Name}`
         : 'SA2 Region: No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
       cattleReg ? `Cattle Region: ${cattleReg}` : null,
+      buildLeachingSummaryLine(leachingRisk),
       ...weatherDataByYear.flatMap(({ year, weatherData }) =>
         buildWeatherSummaryLines(year, weatherData, elevation),
       ),
@@ -892,6 +1103,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
       sa4Name,
       sa2Name,
       cattleReg,
+      leachingRisk,
       parcelIds,
       parcelKeys,
       elevation,
@@ -941,8 +1153,9 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
         const nearestRainfallSite = getNearestRainfallSite(map, lng, lat);
         const nearestMaxTempSite = getNearestMaxTempSite(map, lng, lat);
         const { sa2Name, sa4Name, cattleReg } = getSA2Region(lng, lat);
+        const leachingRisk = await getLeachingRisk(lng, lat);
 
-        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg });
+        console.log('Marker coordinates:', { latitude: lat, longitude: lng, state, elevation, weatherDataByYear, sa2Name, sa4Name, cattleReg, leachingRisk });
 
         let elevationInfo = '';
         if (elevation !== null) {
@@ -984,8 +1197,10 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
           cattleRegInfo = `<br><strong>Cattle Region:</strong> ${cattleReg}`;
         }
 
+        const leachingInfo = buildLeachingInfoHtml(leachingRisk);
+
         document.getElementById('coordinates')!.innerHTML =
-          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
+          `Marker selected<br>Latitude: ${lat.toFixed(6)}<br>Longitude: ${lng.toFixed(6)}${elevationInfo}<br>State: ${state}${sa4Info}${sa2Info}${cattleRegInfo}${leachingInfo}${weatherInfo}${RainfallSiteInfo}${MaxTempSiteInfo}`;
 
         const pointSummaryLines: (string | null)[] = [
           'Marker selected',
@@ -1000,6 +1215,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
             ? `SA2 Region: ${sa2Name}`
             : 'SA2 Region: No SA2 region found - zoom in until you see the SA2 boundaries and add the pin or polygon again',
           cattleReg ? `Cattle Region: ${cattleReg}` : null,
+          buildLeachingSummaryLine(leachingRisk),
           ...weatherDataByYear.flatMap(({ year, weatherData }) =>
             buildWeatherSummaryLines(year, weatherData, elevation),
           ),
@@ -1034,6 +1250,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
           sa4Name,
           sa2Name,
           cattleReg,
+          leachingRisk,
           elevation,
           selectedYears,
           weatherDataByYear,
