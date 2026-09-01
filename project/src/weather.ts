@@ -166,9 +166,12 @@ function buildSiloDataDrillUrl(lat: number, lon: number, year: number): string {
   const startDate = `${year}0101`;
   const endDate = `${year}1231`;
 
+  const username = import.meta.env.VITE_SILO_API_USERNAME || '';
+  const password = import.meta.env.VITE_SILO_API_PASSWORD || '';
+
   return `https://www.longpaddock.qld.gov.au/cgi-bin/silo/DataDrillDataset.php?` +
     `start=${startDate}&finish=${endDate}&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}&` +
-    `format=alldata&username=pkotz@zneagcrc.com.au&password=apirequest`;
+    `format=alldata&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
 }
 
 async function fetchSiloWeatherDataForYear(

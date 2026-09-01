@@ -457,7 +457,7 @@ export function initializeMap(initialSelection?: SavedLocationSelection): mapbox
   function updateLeachingZoomNotice() {
     leachingZoomNotice.textContent =
       leachingLayerVisible && map.getZoom() >= LEACHING_LAYER_MAX_ZOOM
-        ? 'Leaching map visually hidden, but still active'
+        ? 'Leaching map visually hidden when zoomed in, but still active. Zoom out to see the leaching zone map layer.'
         : '';
   }
 

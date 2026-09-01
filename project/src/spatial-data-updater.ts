@@ -298,7 +298,7 @@ async function runPlotSimulation(
  * @param simulationEndYear Simulation end year (default: 2075)
  * @param plantingDate Date of environmental planting (YYYYMMDD)
  * @param plantingName Name of the environmental planting
- * @param subscriptionKey API subscription key (default: c7ce17dce569418b8d3bf7f5a3cd14d3)
+ * @param subscriptionKey API subscription key (default: VITE_FULLCAM_SUBSCRIPTION_KEY from env)
  * @param runSimulation Whether to run the plot simulation after spatial update (default: false)
  * @returns API response (spatial update or simulation result)
  */
